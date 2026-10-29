@@ -4,11 +4,9 @@ The editor's information icon retains DSH's native Tooltip styling and interacti
 
 Message edit/copy hints prefer the left side, clearing timestamps and neighboring controls on the same row, with fallback placement when necessary. Clicking an unavailable edit action adds no inline notice; the reason remains available in its tooltip. Crowded layouts choose the least-obstructed position instead of hiding the hint, so zero overlap is not guaranteed. Settings use individually bordered options with a highlighted selection. Submission failures and uncertain outcomes remain visible.
 
-Current version: **0.2.5**. Screenshots illustrate earlier versions. See [Validation](docs/VALIDATION.md) for this release's checks and their limits.
+Current version: **0.2.5**. See [Validation](docs/VALIDATION.md) for this release's checks and their limits.
 
 Native inline message editing for DeepSeek Harness. Change text, attachments, or both, with Cancel and Send buttons, native icons and theme tokens.
-
-![Native editor](assets/native-light.jpg)
 
 ## Modes
 
@@ -18,8 +16,6 @@ Choose **Settings → Message editing**. Settings persist in the active DSH prof
 - **Regenerate in this conversation**: edit only the **latest main message submitted while idle to start a task**. Retain the Session ID and sidebar chat. Later supplemental input and answers are replaced.
 
 Steering and queued input submitted during generation are excluded, even when later processed as a separate turn. The UI hides their edit button and the Host rejects edits. Earlier main messages require branch mode. Wait for generation and the pending queue to finish. DSH's built-in pending-queue editor is unchanged.
-
-[Light settings](assets/settings-light.png) · [Dark settings](assets/settings-dark.png) · [Narrow settings](assets/settings-narrow.png)
 
 ## Installation
 

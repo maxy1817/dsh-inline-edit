@@ -5,7 +5,7 @@
 - Place message edit/copy hints to the left, clearing timestamps and neighboring controls on the same row before using fallback positions.
 - Keep the information hint 6px below and to the right of its icon.
 - Add two placement regressions; 126 automated tests pass.
-- Synchronize installation, publishing and validation documentation with 0.2.5. Retain prior screenshots as historical examples.
+- Synchronize installation, publishing and validation documentation with 0.2.5. Keep both public READMEs text-only, without screenshot embeds or preview links.
 - Pin src/style.css checkout line endings in .gitattributes so Git normalization does not change the CSS string embedded in the existing bundle. This release-preparation step does not alter source or compiled JavaScript.
 
 ## 0.2.4

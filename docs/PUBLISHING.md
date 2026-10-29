@@ -1,6 +1,6 @@
 # 发布到 GitHub 与插件市场
 
-当前版本：**0.2.5**。安装包：`dsh-inline-edit-0.2.5.tgz`。本次仅准备本地发布资料，未创建远程仓库、推送代码、发布 npm 或提交市场收录。
+当前版本：**0.2.5**。安装包：`dsh-inline-edit-0.2.5.tgz`。源码已上传至 [maxy1817/dsh-inline-edit](https://github.com/maxy1817/dsh-inline-edit)，首次提交 `640d86c` 的 [GitHub 自动检查已通过](https://github.com/maxy1817/dsh-inline-edit/actions/runs/40825170601)。后续修改应重新提交并等待对应检查通过，再发布 Release。npm 发布与市场收录尚未完成。
 
 ## 1. 创建 GitHub 仓库
 
@@ -11,7 +11,7 @@
 - 准备公开发布时选择 **Public**。
 - 不要勾选自动生成 README、.gitignore 或 License，本地已有这些文件，避免首次推送冲突。
 
-创建后记下仓库的 HTTPS 地址。下文 `YOUR_GITHUB_NAME` 均须换成你的真实 GitHub 用户名，不是可直接使用的地址。
+本项目仓库已创建，地址为 `https://github.com/maxy1817/dsh-inline-edit.git`。下面的初始化步骤仅供首次发布参考，已上传后无需重复执行。
 
 ## 2. 上传完整源码
 
@@ -23,7 +23,7 @@ git add .
 git status --short
 git diff --cached --stat
 git commit -m "Release v0.2.5"
-git remote add origin https://github.com/YOUR_GITHUB_NAME/dsh-inline-edit.git
+git remote add origin https://github.com/maxy1817/dsh-inline-edit.git
 git push -u origin main
 ~~~
 
@@ -83,17 +83,17 @@ Web 用户把 desktop 改为 web。安装后重启 DSH。GitHub 自动生成的 
 
 市场目录参考 [贡献指南](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)，要求上次核对日期为 2026-10-28，当时包括仓库创建满 1 天、真实代码、dsh.bundle manifest 和 dsh-plugin topic。提交前重新核对指南，不能把此前规则当成当前保证。
 
-向 awesome-dsh-plugin/awesome-dsh-plugin 提交 PR，只新增 `data/plugins/YOUR_GITHUB_NAME__dsh-inline-edit.yml`，不手工修改生成的 README 或其他条目。使用 GitHub Release 分发时，模板为：
+向 awesome-dsh-plugin/awesome-dsh-plugin 提交 PR，只新增 `data/plugins/maxy1817__dsh-inline-edit.yml`，不手工修改生成的 README 或其他条目。使用 GitHub Release 分发时，模板为：
 
 ~~~yaml
-url: https://github.com/YOUR_GITHUB_NAME/dsh-inline-edit
-name: YOUR_GITHUB_NAME/dsh-inline-edit
+url: https://github.com/maxy1817/dsh-inline-edit
+name: maxy1817/dsh-inline-edit
 category: ui
 description:
   en: Edit text and attachments in DeepSeek Harness, with branch or latest-main-message regeneration modes.
   zh: 为 DeepSeek Harness 添加消息和附件编辑，可选择新分支或仅最近主消息的当前对话重新生成。
-icon: https://raw.githubusercontent.com/YOUR_GITHUB_NAME/dsh-inline-edit/main/assets/icon-180.png
-tarball: https://github.com/YOUR_GITHUB_NAME/dsh-inline-edit/releases/download/v0.2.5/dsh-inline-edit-0.2.5.tgz
+icon: https://raw.githubusercontent.com/maxy1817/dsh-inline-edit/main/assets/icon-180.png
+tarball: https://github.com/maxy1817/dsh-inline-edit/releases/download/v0.2.5/dsh-inline-edit-0.2.5.tgz
 ~~~
 
 必须先实际发布这个 Release 及附件，再提交带该 tarball 地址的条目。通过维护者审查合并后仍需等待索引刷新；不同市场的收录流程不完全相同。
