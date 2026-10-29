@@ -1,0 +1,6 @@
+* text=auto eol=lf
+# The text loader embeds these line endings; keep the existing bundle reproducible.
+src/style.css text eol=crlf
+*.png binary
+*.jpg binary
+*.tgz binary

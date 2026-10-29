@@ -1,0 +1,73 @@
+/* MIT, Copyright (c) 2026 DeepSeek; namespaced for this plugin. */
+.dsh-ie-tip-bubble {
+  display: inline-flex;
+  align-items: safe center;
+  gap: 8px;
+  position: fixed;
+  z-index: 100;
+  /* Fixed-position shrink-to-fit measures only the space from `left` to the
+     viewport edge, so anchors near the right edge would wrap early;
+     max-content sizes by the label alone, capped at half the viewport. */
+  width: max-content;
+  box-sizing: border-box;
+  max-width: min(50vw, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  padding: 3px 7px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: var(--dsw-alias-tooltip-bg, #292a2d);
+  color: var(--dsw-static-neutral-bluish-00, #fff);
+  font-family: var(--dsw-font-family, system-ui, sans-serif);
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: normal;
+  text-align: start;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre-line;
+  /* Unbreakable tokens (URLs, paths) must not push past max-width. */
+  overflow-wrap: break-word;
+  pointer-events: none;
+  animation: dsh-ie-tooltip-in 150ms var(--ds-ease-in-out, ease-in-out);
+}
+
+.dsh-ie-tip-bubble[data-portal] { z-index: 1100; }
+.dsh-ie-tip-bubble[data-pinned] { pointer-events: auto; }
+.dsh-ie-tip-label { min-width: 0; }
+
+/* A 16px keycap centered beside a 20px label has 5px of vertical clearance. */
+.dsh-ie-tip-bubble[data-has-shortcut] { padding-inline-end: 5px; }
+.dsh-ie-tip-bubble[data-has-shortcut]:not(:has(.dsh-ie-tip-label)) { padding: 3px; }
+
+.dsh-ie-tip-bubble[data-side='right'],
+.dsh-ie-tip-bubble[data-side='left'] {
+  transform: translateY(-50%);
+}
+
+.dsh-ie-tip-bubble[data-side='bottom'] {
+  transform: translateX(-50%);
+}
+
+.dsh-ie-tip-bubble[data-side='top'] {
+  transform: translate(-50%, -100%);
+}
+
+/* End alignment: `left` carries the anchor's right edge, so the bubble sits
+   fully left of it instead of centering. */
+.dsh-ie-tip-bubble[data-side='bottom'][data-align='end'] {
+  transform: translateX(-100%);
+}
+
+.dsh-ie-tip-bubble[data-side='top'][data-align='end'] {
+  transform: translate(-100%, -100%);
+}
+
+@keyframes dsh-ie-tooltip-in {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-ie-tip-bubble {
+    animation: none;
+  }
+}
