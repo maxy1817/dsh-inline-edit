@@ -1,8 +1,8 @@
 # 发布到 GitHub 与插件市场
 
-当前准备发布版本：**0.3.0**。安装包：`dsh-inline-edit-0.3.0.tgz`。源码仓库为 [maxy1817/dsh-inline-edit](https://github.com/maxy1817/dsh-inline-edit)。本版让普通文件与文字处于同一编辑流，蓝色原子标签不附加删除 X，支持光标处插入、继续输入、键盘删除与撤销恢复。
+当前版本：**0.3.0**。安装包：`dsh-inline-edit-0.3.0.tgz`。源码仓库为 [maxy1817/dsh-inline-edit](https://github.com/maxy1817/dsh-inline-edit)。本版让普通文件与文字处于同一编辑流，蓝色原子标签不附加删除 X，支持光标处插入、继续输入、键盘删除与撤销恢复。
 
-本地 334 项自动回归及官方 DSH 0.2.1-rc.5 隔离离线 Web/Host、实际重启恢复、浏览器文件编辑验收已通过；原生桌面端由用户后续测试，范围见 [验证记录](VALIDATION.md)。每次发布应等待对应 GitHub 检查通过，再发布 Release。历史首次提交 `640d86c` 的 [自动检查记录](https://github.com/maxy1817/dsh-inline-edit/actions/runs/40825170601) 仅代表当时版本。npm 发布与市场收录需分别核实。
+本地 334 项自动回归及官方 DSH 0.2.1-rc.5 隔离离线 Web/Host、实际重启恢复、浏览器文件编辑验收已通过，范围见 [验证记录](VALIDATION.md)。每次发布应等待对应 GitHub 检查通过，再发布 Release。历史首次提交 `640d86c` 的 [自动检查记录](https://github.com/maxy1817/dsh-inline-edit/actions/runs/40825170601) 仅代表当时版本。npm 发布与市场收录需分别核实。
 
 ## 1. 创建 GitHub 仓库
 
@@ -50,7 +50,7 @@ git config user.email "GitHub Settings → Emails 中显示的 noreply 邮箱"
 
 必须保留 .gitattributes 的 `src/style.css text eol=crlf` 规则：当前 CSS 通过文本加载器内嵌进 JavaScript，换行变化会导致 lib/client.js 与 CI 重新构建的结果不同。该规则解决检出差异，不改动代码逻辑。
 
-package.json 声明的 engines.dsh 范围为 `>=0.2.1-rc.3 <0.2.2-0`。rc.3 是历史契约基线，0.3.0 已完成上述 rc.5 隔离离线 Web/Host 验证；这不代表范围内所有版本均已验收。设置模块的 rc.5 开发依赖用于其故障回归，不应仅为形式统一或通过安装而调整依赖与 engines。升级宿主后先在隔离配置重测。
+package.json 声明的 engines.dsh 范围为 `>=0.2.1-rc.3 <0.2.3-0`。rc.3 是历史契约基线，0.3.0 已完成上述 rc.5 隔离离线 Web/Host 验证，发布前另确认桌面实测通过；当前安装的 DSH 版本为 0.2.2-rc.1。这不代表范围内所有版本均已验收。设置模块的 rc.5 开发依赖用于其故障回归，不应仅为形式统一或通过安装而调整开发依赖。升级宿主后先在隔离配置重测。
 
 ## 4. 创建可下载安装的 Release
 
@@ -81,11 +81,11 @@ Web 用户把 desktop 改为 web。找不到 dsh 命令时，使用桌面安装�
 
 ## 5. 插件市场收录
 
-**GitHub 上传成功不等于 DSH 市场已经能搜到。** 还需要按目录维护者规则提交收录。
+本插件已通过 [收录 PR #11091](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/11091) 合并到目录。**发布新 Release 不会自动更新目录中固定的安装包地址。** 后续版本需提交同一条目的 tarball 更新，并等待合并及索引刷新。
 
-市场目录参考 [贡献指南](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)，要求上次核对日期为 2026-10-28，当时包括仓库创建满 1 天、真实代码、dsh.bundle manifest 和 dsh-plugin topic。提交前重新核对指南，不能把此前规则当成当前保证。
+市场目录参考 [贡献指南](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)，本次核对日期为 2026-11-06，要求包括仓库创建满 1 天、真实代码、dsh.bundle manifest 和 dsh-plugin topic。后续提交前仍应重新核对指南。
 
-向 awesome-dsh-plugin/awesome-dsh-plugin 提交 PR，只新增 `data/plugins/maxy1817__dsh-inline-edit.yml`，不手工修改生成的 README 或其他条目。使用 GitHub Release 分发时，模板为：
+向 awesome-dsh-plugin/awesome-dsh-plugin 提交 PR，仅更新已有的 `data/plugins/maxy1817__dsh-inline-edit.yml`，不新增重复条目，不手工修改生成的 README 或其他条目。首次收录时才新增该文件。使用 GitHub Release 分发时，模板为：
 
 ~~~yaml
 url: https://github.com/maxy1817/dsh-inline-edit

@@ -5,7 +5,8 @@
 - Place retained and newly added ordinary files in the same Lexical text flow as native blue atomic labels, without an added delete X. Keep images in their preview row.
 - Preserve the caret across file picking and continue typing immediately after inserted files, without adding spaces. Support text before, between and after file labels.
 - Delete whole attachment tokens with Backspace, Delete or Cut, and restore the original attachment reference or File with Undo. Keep attachment payloads separate from the exact body text.
-- Pass 334 automated regressions covering the real editor's selection, clipboard, history, keyboard and composition events. Verify the official DSH 0.2.1-rc.5 Web/Host with an isolated offline provider, including recovery after a real Host restart, and browser file removal, Undo, multi-file insertion, continued typing and branch submission. Native desktop acceptance remains with the user; see docs/VALIDATION.md for the exact scope.
+- Extend the declared DSH compatibility range to `>=0.2.1-rc.3 <0.2.3-0`. Desktop testing was confirmed before release; automated Web/Host checks remain pinned to rc.5.
+- Pass 334 automated regressions covering the real editor's selection, clipboard, history, keyboard and composition events. Verify the official DSH 0.2.1-rc.5 Web/Host with an isolated offline provider, including recovery after a real Host restart, and browser file removal, Undo, multi-file insertion, continued typing and branch submission. See docs/VALIDATION.md for the exact scope.
 
 ## 0.2.14
 
