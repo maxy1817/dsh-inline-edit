@@ -48,6 +48,8 @@ git config user.email "GitHub Settings → Emails 中显示的 noreply 邮箱"
 
 仓库的 Actions → Check 会在 Ubuntu、Windows 上使用 Node.js 24 执行安装、构建、测试、产物差异检查和打包预检。两个作业都通过后再发布正式 Release。本地通过不能代替远程 CI 已通过。
 
+需要手动复核发布提交时，可在 Actions → Check → Run workflow 中选择对应分支。发布应使用目标提交实际通过的检查记录。
+
 必须保留 .gitattributes 的 `src/style.css text eol=crlf` 规则：当前 CSS 通过文本加载器内嵌进 JavaScript，换行变化会导致 lib/client.js 与 CI 重新构建的结果不同。该规则解决检出差异，不改动代码逻辑。
 
 package.json 声明的 engines.dsh 范围为 `>=0.2.1-rc.3 <0.2.3-0`。rc.3 是历史契约基线，0.3.0 已完成上述 rc.5 隔离离线 Web/Host 验证，发布前另确认桌面实测通过；当前安装的 DSH 版本为 0.2.2-rc.1。这不代表范围内所有版本均已验收。设置模块的 rc.5 开发依赖用于其故障回归，不应仅为形式统一或通过安装而调整开发依赖。升级宿主后先在隔离配置重测。
