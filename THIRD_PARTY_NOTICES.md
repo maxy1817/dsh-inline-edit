@@ -4,9 +4,15 @@
 
 The icon functions in src/vendor/dsh-icons.js are copied from @deepseek-ai/dsh-client-ui-primitives 0.2.1-rc.3, https://github.com/deepseek-ai/deepseek-harness. Only the required SVG artwork is included; it uses the host React runtime. Original plugin branding is separate.
 
-The Tooltip component and stylesheet in src/vendor/dsh-tooltip.js and src/vendor/dsh-tooltip.css are adapted from the same MIT release. Native interaction behavior is retained; placement is extended to prefer the lower-right corner, avoid interactive controls, and follow scrolling. CSS names are scoped to this plugin. scripts/sync-tooltip.mjs reproduces the adaptation from the pinned upstream package. Host files are never changed.
+The Tooltip component and stylesheet in src/vendor/dsh-tooltip.js and src/vendor/dsh-tooltip.css are adapted from the same MIT release. Native interaction behavior is retained; placement stays anchored to the control, avoids interactive controls, and follows scrolling. CSS names are scoped to this plugin. scripts/sync-tooltip.mjs reproduces the adaptation from the pinned upstream package. Host files are never changed.
 
 MIT License
+
+The reference node and single-newline text projection in src/vendor/dsh-reference-node.jsx, and the decorator portal bridge in src/reference-editor.jsx, are adapted from @deepseek-ai/dsh-client-ui-conversation 0.2.1-rc.3 (DeepSeek Harness). They use an independent editor instance and the public host ReferenceChip for presentation.
+
+The client bundle also includes Lexical 0.49.0 and its plain-text/history support packages, https://github.com/facebook/lexical, under the same MIT terms below.
+
+Copyright (c) Meta Platforms, Inc. and affiliates.
 
 Copyright (c) 2026 DeepSeek
 

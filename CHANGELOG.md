@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.3.0
+
+- Place retained and newly added ordinary files in the same Lexical text flow as native blue atomic labels, without an added delete X. Keep images in their preview row.
+- Preserve the caret across file picking and continue typing immediately after inserted files, without adding spaces. Support text before, between and after file labels.
+- Delete whole attachment tokens with Backspace, Delete or Cut, and restore the original attachment reference or File with Undo. Keep attachment payloads separate from the exact body text.
+- Pass 334 automated regressions covering the real editor's selection, clipboard, history, keyboard and composition events. Verify the official DSH 0.2.1-rc.5 Web/Host with an isolated offline provider, including recovery after a real Host restart, and browser file removal, Undo, multi-file insertion, continued typing and branch submission. Native desktop acceptance remains with the user; see docs/VALIDATION.md for the exact scope.
+
+## 0.2.14
+
+- Display retained and newly added ordinary files as compact native blue reference labels, retaining their attachment objects and separate remove actions.
+- Keep file mentions recognized by DSH as blue atomic labels when opening the message editor. Preserve the exact underlying text, file paths, quotes and line breaks for submission and clipboard operations.
+- Use an isolated Lexical editor and an adapted native reference node for messages containing file mentions; retain the plain textarea for other messages. Keep image preview and upward expansion behavior.
+- Update source, prebuilt output and documentation. Final regression and browser verification were not run at the user's request.
+
+## 0.2.13
+
+- Open retained and newly added image thumbnails in DSH's native ImageLightbox, preserving its backdrop, Escape, focus trapping and close behavior without discarding the edit draft.
+- Anchor the message's bottom edge while opening, resizing or cancelling the editor and changing attachments, so available conversation scrolling makes the editor expand upward. Respect nested scroll boundaries and user scroll input.
+
+## 0.2.12
+
+- Send edited messages with Enter in both modes; use Shift+Enter for a newline and retain Ctrl/Cmd+Enter as send shortcuts.
+- Preserve IME confirmation, empty-input and submission guards. Ignore held-key repeats so an unsuccessful send is not automatically repeated.
+
+## 0.2.11
+
+- Observe the native settings describe mirror alongside the cached form, distinguishing failed reads, unavailable services and invalid mode values from session readiness.
+- Retry a failed initial settings read when reopening Settings, with an explicit Retry action after failure. Pending retries are deduplicated and failures do not start a polling loop.
+- Require an explicitly accepted branch/current value before enabling editing, preserving the saved mode and existing busy-session guards.
+
+## 0.2.10
+
+- Hide Copy when a message has no non-whitespace text, keeping its clock, edit eligibility and regeneration behavior. Preserve all text whitespace when copying messages that also contain attachments.
+- Show thumbnails for retained images through the host's image loader and for newly added images through local object URLs. Keep filenames and removal available when previews fail.
+- Ignore late preview results after removal, cancellation or source changes. Release only object URLs created by the editor, preserving the host's cached image URLs.
+
+## 0.2.9
+
+- Shorten Copy, Edit, Attach files and latest-message restriction hints in Chinese and English, preserving full accessible action labels and submission warnings.
+- Release focus on pointer copy without moving keyboard focus or stealing focus when clipboard promises settle. Keep success and failure feedback.
+- Show the full local date and time, including year and seconds, on clock hover or keyboard focus. Keep the compact clock and its midnight refresh; pointer activation of the clock does not hold the toolbar open.
+
+## 0.2.8
+
+- Center short hints 8px below their own button, matching native DSH placement. Keep long edit restrictions aligned with the button's right edge; clamp near viewport edges before flipping, and remove the distant left-of-row and diagonal placements.
+- Match the native local message clock: time today, month/day on other dates, and year across years. Refresh at local midnight and keep invalid timestamps from breaking message actions.
+- Scope control avoidance to the current message so unrelated turn controls do not displace hints. Retain native tooltip interaction, scrolling updates and previous resend/cancel fixes.
+
+## 0.2.7
+
+- Allow unchanged text-only messages and text with attachments to regenerate in both modes using Send or Ctrl/Cmd + Enter. Remove the client and Host content-change requirement while retaining empty-input and submission checks.
+- Give each confirmed regeneration a fresh request ID so another explicit send is not mistaken for an earlier request when the message component is reused.
+- Stop pointer cancellation from refocusing Edit and leaving the message action bar visible after the pointer moves away. Keyboard cancellation and Escape still restore focus.
+- Cover unchanged text and attachments through UI, coordinator, Host context replacement and strict disk recovery. This is a local patch build, not a remote publication.
+
+## 0.2.6
+
+- Allow unchanged attachment-only messages to be explicitly resent from the editor in both branch and current-conversation modes, including after a failed model run. No dummy text or attachment replacement is required.
+- Keep unchanged text-bearing messages blocked and retain busy-session, duplicate-request, uncertain-outcome, attachment authorization and size/model checks.
+- Add UI, coordinator and direct Host regressions. This is a local patch build, not a remote publication.
+
 ## 0.2.5
 
 - Place message edit/copy hints to the left, clearing timestamps and neighboring controls on the same row before using fallback positions.

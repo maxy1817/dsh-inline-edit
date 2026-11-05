@@ -159,8 +159,9 @@ export async function editCurrent(ctx, input, requestSignal) {
           || (limits && (imageCount>limits.maxImagesPerMessage || imageBytes>limits.maxMessageImageBytes))) fail('totalSize');
         proposed.push(block);
       }
-      if (!count && !proposed.some(p=>p.type==='text' && p.text.trim())) fail('empty');
-      if (JSON.stringify(proposed)===JSON.stringify(target.data.content)) fail('unchanged');
+      const hasText=proposed.some(p=>p.type==='text' && p.text.trim());
+      if (!count && !hasText) fail('empty');
+      // Sending an unchanged valid message explicitly requests regeneration.
       for (const block of originals) {
         check();
         if (block.type==='image') await ctx.attachments.readImage(block.attachment,signal);

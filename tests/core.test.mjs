@@ -55,9 +55,39 @@ test('attachment-only message with empty text is accepted',async()=>{
  const f=fixture([file]);await f.save({text:'',attachments:[newAttachment(new File(['x'],'x.txt'),'new:1')]});
  assert.deepEqual(f.calls.find(x=>x[0]==='prompt')[2],[{type:'file',receiptId:'new-receipt'}]);
 });
-for (const [label,args,code] of [['unchanged',{text:text.text},'unchanged'],['empty',{text:' ',attachments:[]},'empty'],['oversize text',{text:'x'.repeat(200001)},'tooLong']]) {
+for (const [label,args,code] of [['empty',{text:' ',attachments:[]},'empty'],['oversize text',{text:'x'.repeat(200001)},'tooLong']]) {
  test(label+' is rejected before mutating host',async()=>{const f=fixture();await assert.rejects(f.save(args),{code});assert.equal(f.calls.length,0);});
 }
+for (const [name,content] of [
+ ['text',[text]],['text and file',[text,file]],['text and image',[text,image]],
+ ['file-only',[file]],['image-only',[image]],
+]) {
+ const draft=content.filter(part=>part.type==='text').map(part=>part.text).join('');
+ test(`unchanged ${name} message can be regenerated in branch mode`,async()=>{
+  const f=fixture(content);await f.save({text:draft});
+  const prompts=f.calls.filter(x=>x[0]==='prompt');assert.equal(prompts.length,1);
+  assert.equal(prompts[0][1],'child');
+  assert.deepEqual(prompts[0][2],content.map(part=>part.type==='text'?part:part.type==='file'
+   ? {type:'file',receiptId:'old-receipt'}
+   : {type:'image',name:'old.png',mediaType:'image/png',data:'AQID'}));
+  assert.deepEqual(f.calls.find(x=>x[0]==='fork'),['fork','source',2]);
+  assert.deepEqual(f.seeded.slice(0,3),f.before.slice(0,3));
+  assert.deepEqual(f.seeded.filter(event=>['user/message','assistant/message'].includes(event.type)),[f.before[1]]);
+  assert.deepEqual(f.events,f.before);
+ });
+ test(`unchanged ${name} message reaches current endpoint`,async()=>{
+  const f=fixture(content);f.api.planCurrent=async()=>({tail:4});
+  f.api.editCurrent=async request=>{f.calls.push(['current',request]);return {sessionId:'source'};};
+  assert.deepEqual(await f.save({text:draft,mode:'current',requestId:'retry'}),{sessionId:'source'});
+  assert.deepEqual(f.calls,[['current',{sourceId:'source',seq:3,tail:4,requestId:'retry',
+   content:content.map((part,index)=>part.type==='text'?part:{type:'original',index})}]]);
+  assert.deepEqual(f.events,f.before);
+ });
+}
+test('unchanged attachment retry still rejects a running source',async()=>{
+ const f=fixture([file]);f.api.using=async(_,fn)=>fn({getSnapshot:()=>({...ready(),running:true})});
+ await assert.rejects(f.save({text:''}),{code:'running'});assert.equal(f.calls.length,0);
+});
 test('running source is rejected before fork',async()=>{
  const f=fixture();f.api.using=async(_,fn)=>fn({getSnapshot:()=>({...ready(),running:true})});
  await assert.rejects(f.save(),{code:'running'});assert.equal(f.calls.length,0);

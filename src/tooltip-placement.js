@@ -1,30 +1,24 @@
-/** Right/below the icon, with viewport and interactive-control avoidance. */
+/** Stay beside the anchor, flipping sides only for viewport or control collisions. */
 export function placeTooltip({anchor,width,height,viewportWidth,viewportHeight,gap=8,avoid=[],side='bottom',align='center'}) {
   const margin=12;
   width=Math.min(width,Math.max(0,viewportWidth-margin*2));
   height=Math.min(height,Math.max(0,viewportHeight-margin*2));
   const clampX=x=>Math.max(margin,Math.min(x,viewportWidth-margin-width));
   const clampY=y=>Math.max(margin,Math.min(y,viewportHeight-margin-height));
-  const candidates=[
-    {left:anchor.right+gap,top:anchor.bottom+gap,side:'bottom'},
-    {left:anchor.left-gap-width,top:anchor.bottom+gap,side:'bottom'},
-    {left:anchor.right+gap,top:anchor.top-gap-height,side:'top'},
-    {left:anchor.left-gap-width,top:anchor.top-gap-height,side:'top'},
-  ];
-  if(side==='left') {
-    const top=(anchor.top+anchor.bottom-height)/2;
-    // Clear neighboring action buttons and the timestamp as a single row.
-    const row=avoid.filter(r=>r.bottom>top && r.top<top+height && r.right<=anchor.left && r.right>anchor.left-180);
-    const edge=Math.min(anchor.left,...row.map(r=>r.left));
-    candidates.unshift({left:edge-gap-width,top,side:'left'});
-  }
-  // Message actions sit immediately above the turn toolbar. Prefer the empty
-  // space above the action row rather than laying a hint across that toolbar.
-  if(side==='top') {
-    const left=align==='end'?anchor.right-width:(anchor.left+anchor.right-width)/2;
-    candidates.unshift({left,top:anchor.top-gap-height,side:'top'});
-    candidates.sort((a,b)=>(a.side==='top'?0:1)-(b.side==='top'?0:1));
-  }
+  const opposite={bottom:'top',top:'bottom',left:'right',right:'left'};
+  // Clamp along the cross axis first, keeping the requested side and gap near
+  // viewport edges. Never shift the anchor to clear a neighboring action row.
+  const left=clampX(align==='end'?anchor.right-width:(anchor.left+anchor.right-width)/2);
+  const top=clampY((anchor.top+anchor.bottom-height)/2);
+  const positions={
+    bottom:{left,top:anchor.bottom+gap},
+    top:{left,top:anchor.top-gap-height},
+    right:{left:anchor.right+gap,top},
+    left:{left:anchor.left-gap-width,top},
+  };
+  const horizontal=side==='left'||side==='right';
+  const candidates=[side,opposite[side],...(horizontal?['bottom','top']:['right','left'])]
+    .map(side=>({...positions[side],side}));
   const overlap=(p,r)=>Math.max(0,Math.min(p.left+width,r.right+4)-Math.max(p.left,r.left-4))
     *Math.max(0,Math.min(p.top+height,r.bottom+4)-Math.max(p.top,r.top-4));
   const blockers=[anchor,...avoid];

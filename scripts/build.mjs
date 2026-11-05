@@ -5,6 +5,7 @@ for (const file of ['index.js','current.js','history.js']) await copyFile('src/'
 await build({
   entryPoints: ['src/client.jsx'], outfile: 'lib/client.js', bundle: true,
   format: 'cjs', platform: 'browser', target: ['es2022'], jsx: 'automatic',
+  define: { 'process.env.NODE_ENV': '"production"' },
   external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/dsh-client-ui-primitives'], loader: { '.css': 'text' },
   banner: { js: 'window.__ModuleLoader__.load({ id: "dsh-inline-edit", factory: (require) => { const module = { exports: {} }; const exports = module.exports;' },
   footer: { js: 'return module.exports; } });' },

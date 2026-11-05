@@ -18,7 +18,7 @@ function diskRoundtrip(session) {
   const restored=restore.finish();
   return Session.fromRestore(session.id,restored.events,restored.header,restored.inheritedEventCount,'detached');
 }
-function fixture(targetContent,beforeAnswer) {
+function fixture(targetContent,beforeAnswer,targetFailure) {
   const session=Session.create('same-session'), inbox={nextTurn:[],nextStep:[]};
   const add=(turn,content,answer,queued)=>{
     const message=queued ?? createUserMessage({content,source:{kind:'user'}});
@@ -30,7 +30,7 @@ function fixture(targetContent,beforeAnswer) {
     const target=session.append('user/message',message,{surfaceOp:'append'});
     if(turn===2) beforeAnswer?.(session);
     session.append('assistant/message',{turn,step:1,message:createAssistantMessage({content:[txt(answer)],source:{provider:'test',model:'offline'}}),stream:[]},{surfaceOp:'append'});
-    session.append('step/end',{turn,step:1});session.append('turn/end',{turn,reason:{kind:'completed'}}); return target;
+    session.append('step/end',{turn,step:1});session.append('turn/end',{turn,reason:turn===2 && targetFailure ? {kind:'error',error:targetFailure} : {kind:'completed'}}); return target;
   };
   const keep=add(1,[txt('KEEP')],'KEEP-ANSWER');
   const target=add(2,targetContent ?? [txt('OLD'),{type:'file',attachment:{attachmentId:'old-file',name:'old.txt',bytes:3}}],'OLD-ANSWER');
@@ -174,6 +174,59 @@ function assertUntouched(f,n) {
   assert.equal(f.session.snapshotEvents().length,n);
   assert.equal(f.agent.inbox.nextTurn.length,0);
 }
+const oldFile={type:'file',attachment:{attachmentId:'old-file',name:'old.txt',bytes:3}};
+for (const [name,content] of [
+  ['text',[txt('OLD')]],['text and image',[txt('OLD'),oldImage]],['text and file',[txt('OLD'),oldFile]],
+  ['image',[oldImage]],['file',[oldFile]],['mixed attachments',[oldImage,oldFile]],
+  ['blank text with attachment',[txt(' \n\t'),oldFile]],
+]) test('unchanged '+name+' can regenerate after a successful turn',async()=>{
+  const f=fixture(content),calls=hostAttachments(f);
+  let fileReads=0;
+  f.ctx.attachments.readFileStream=async function*(){fileReads++;yield new Uint8Array([1,2,3]);};
+  f.input.content=content.map((part,index)=>part.type==='text'?part:{type:'original',index});
+  assert.equal(f.session.snapshotEvents().at(-1).data.reason.kind,'completed');
+  assert.deepEqual(await editCurrent(f.ctx,f.input,signal),{sessionId:f.agent.id,accepted:true});
+  assert.deepEqual(f.agent.inbox.nextTurn[0].content,content);
+  assert.notEqual(f.agent.inbox.nextTurn[0].id,f.target.data.id);
+  assert.equal(calls.reads,content.filter(p=>p.type==='image').length);
+  assert.equal(fileReads,content.filter(p=>p.type==='file').length);
+  assert.equal(calls.writes,0);assert.equal(calls.batches.length,0);
+  assert.equal(editRanges(f.session.snapshotEvents()).length,1);
+  await editCurrent(f.ctx,f.input,signal);
+  assert.equal(f.agent.inbox.nextTurn.length,1,'same request remains idempotent');
+  consumeReplacement(f,3,'REGENERATED');
+  const retained=content.map(part=>part.type==='text'?part.text:part.attachment.attachmentId).filter(value=>value.trim());
+  for (const session of [f.session,diskRoundtrip(f.session)]) {
+    assert.equal(session.id,f.agent.id);
+    assertContext(session,['KEEP','REGENERATED',...retained],['OLD-ANSWER']);
+  }
+});
+for (const block of [oldImage,oldFile]) test('unchanged '+block.type+' retries after interrupted upstream stream',async()=>{
+  const f=fixture([block],undefined,{code:'PI_AI_ERROR',message:'Upstream response stream was interrupted'});
+  hostAttachments(f);f.input.content=[{type:'original',index:0}];
+  assert.equal(f.session.snapshotEvents().at(-1).data.reason.kind,'error');
+  await editCurrent(f.ctx,f.input,signal);
+  assert.deepEqual(f.agent.inbox.nextTurn[0].content,[block]);
+  consumeReplacement(f,3,'RETRY-ANSWER');
+  assertContext(diskRoundtrip(f.session),['KEEP','RETRY-ANSWER'],['OLD-ANSWER']);
+});
+for (const block of [oldImage,oldFile]) test('unchanged '+block.type+' still requires a readable original',async()=>{
+  const f=fixture([block]),n=f.session.snapshotEvents().length;
+  f.input.content=[{type:'original',index:0}];
+  f.ctx.attachments.readImage=async()=>{throw Error('missing');};
+  f.ctx.attachments.readFileStream=async function*(){throw Error('missing');};
+  await assert.rejects(editCurrent(f.ctx,f.input,signal),e=>e.editCode==='currentFailed');
+  assertUntouched(f,n);
+});
+for (const [name,setup,code] of [
+  ['model',f=>{f.ctx.llm.resolveModelInfo=async()=>({inputModalities:['text']});},'imageModel'],
+  ['limits',f=>{hostAttachments(f,{maxImageBytes:2});},'imageSize'],
+]) test('unchanged image still obeys '+name+' validation',async()=>{
+  const f=fixture([oldImage]),n=f.session.snapshotEvents().length;
+  setup(f);f.input.content=[{type:'original',index:0}];
+  await assert.rejects(editCurrent(f.ctx,f.input,signal),e=>e.editCode===code);
+  assertUntouched(f,n);
+});
 test('all new images use one ordered host batch and retain interleaved content',async()=>{
   const f=fixture(),calls=hostAttachments(f);
   f.input.content=[image('one'),txt('between'),{type:'file',receiptId:'upload'},image('two')];

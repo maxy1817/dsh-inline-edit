@@ -29,10 +29,6 @@ export function newAttachment(file, key) {
   const mediaType = file.type || ({ png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', webp:'image/webp', gif:'image/gif' }[extension]);
   return { key, origin:'new', type: IMAGE_TYPES.has(mediaType) ? 'image' : 'file', file, mediaType, name:file.name || 'attachment', size:file.size };
 }
-export function draftChanged(data, text, attachments) {
-  const original = originalAttachments(data);
-  return text !== contentView(data).text || original.length !== attachments.length || attachments.some((a,i) => a.origin !== 'original' || a.index !== original[i]?.index);
-}
 export function editRestriction(node) {
   if (!['user','steering'].includes(node?.kind) || !Number.isSafeInteger(node.data?.seq) || node.data.seq < 1) return 'unsupported';
   if (!Array.isArray(node.data.content) || !node.data.content.length) return 'unsupported';
@@ -99,7 +95,6 @@ export function createEditCoordinator(api) {
       if (typeof text !== 'string' || (!text.trim() && !attachments.length)) throw new EditError('empty');
       if (text.length > MAX_TEXT_LENGTH) throw new EditError('tooLong');
       validateAttachments(attachments,node.data);
-      if (!draftChanged(node.data,text,attachments)) throw new EditError('unchanged');
       if (busy.has(sessionId)) throw new EditError('duplicate');
       busy.add(sessionId); let childId, stage='prepare';
       try {
