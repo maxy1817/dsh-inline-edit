@@ -39,16 +39,18 @@ DeepSeek Harness 原生消息编辑插件。点击消息旁的铅笔，在原位
 
 时间沿用原生规则：当天显示时分，其他日期带月日，跨年带年份，跨过午夜自动更新。悬停或用 Tab 聚焦时间可查看完整本地年月日和时分秒。鼠标复制后移开可收起工具栏，键盘复制保留焦点；复制失败仍显示错误。点击不可编辑的铅笔不追加重复文字；提交失败和结果不确定的提示会保留。
 
-当前版本为 **0.3.0**。334 项自动回归、官方隔离 Web/Host 的离线验证、实际重启恢复及浏览器文件编辑验收已通过，发布前桌面实测也已确认通过。详细范围见 [验证记录](docs/VALIDATION.md)。
+当前版本为 **0.3.0**。339 项自动回归、官方隔离 Web/Host 的离线验证、实际重启恢复及浏览器文件编辑验收已通过，发布前桌面实测也已确认通过。详细范围见 [验证记录](docs/VALIDATION.md)。
 
 ## 安装与升级
 
 支持 **DSH 0.2.2-rc.1**，发布前桌面实测已确认通过。0.3.0 另在 Windows 的 **DSH 0.2.1-rc.5 官方 Web/Host** 中使用桌面安装包自带 CLI、独立配置与离线适配器验证，并完成真实 Host 重启后的会话恢复。rc.3 的 Web/Host 验证属于历史基线。真实外部模型、物理中文输入法、其他宿主版本和远程代理未纳入自动验收。
 
+下载 [0.3.0 兼容性修订包](https://github.com/maxy1817/dsh-inline-edit/releases/tag/v0.3.0-compat.1)。包内版本仍为 0.3.0，修正 DSH 0.2.2-rc.1 和 schemastery 3.19.0 的依赖声明；旧版 0.3.0 安装包未包含此修正。同版本重装不会自动提示升级。
+
 在安装包目录执行：
 
 ~~~powershell
-dsh plugin --profile desktop add "./dsh-inline-edit-0.3.0.tgz"
+dsh plugin --profile desktop add "./dsh-inline-edit-0.3.0-compat.tgz"
 ~~~
 
 Web 配置把 desktop 改为 web。找不到 dsh 命令时，使用桌面安装目录下 resources/runtime/cli/bin/dsh.cmd 的完整路径。重新打开 DSH，在设置中选择模式。预构建包无需安装开发依赖。

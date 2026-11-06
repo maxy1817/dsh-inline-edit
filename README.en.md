@@ -6,7 +6,7 @@ Long edit restrictions align with the button's right edge below it, rather than 
 
 Action hints use the concise “Copy,” “Edit” and “Attach files,” while accessible control labels retain their full wording. The latest-message restriction is shorter. Hovering or keyboard-focusing the clock reveals the full local date, year and time including seconds. Pointer copying releases button focus so the action row can hide when the pointer leaves; keyboard copying keeps focus. Clipboard errors remain visible.
 
-Current version: **0.3.0**. All 334 automated regressions, isolated official Web/Host checks with an offline provider, recovery after a real Host restart, and browser file-editing acceptance have passed. Desktop testing was also confirmed before release. See [Validation](docs/VALIDATION.md) for the exact scope.
+Current version: **0.3.0**. All 339 automated regressions, isolated official Web/Host checks with an offline provider, recovery after a real Host restart, and browser file-editing acceptance have passed. Desktop testing was also confirmed before release. See [Validation](docs/VALIDATION.md) for the exact scope.
 
 Native inline message editing for DeepSeek Harness. Change text, attachments, or both, with Cancel and Send buttons, native icons and theme tokens.
 
@@ -25,8 +25,10 @@ Steering and queued input submitted during generation are excluded, even when la
 
 Supports **DSH 0.2.2-rc.1**, with desktop testing confirmed before release. Version 0.3.0 was also tested with **DSH 0.2.1-rc.5 official Web/Host on Windows**, using the desktop installation's CLI, an isolated configuration and an offline provider, including session recovery after a real Host restart. The rc.3 Web/Host checks are historical baselines. Real model providers, a physical Chinese IME, other host releases and reverse proxies were not part of automated acceptance.
 
+Download the [0.3.0 compatibility revision](https://github.com/maxy1817/dsh-inline-edit/releases/tag/v0.3.0-compat.1). Its package version remains 0.3.0; it corrects the declarations for DSH 0.2.2-rc.1 and schemastery 3.19.0. The original 0.3.0 asset does not contain this fix. Reinstalling the same version does not provide an automatic upgrade notification.
+
 ~~~sh
-dsh plugin --profile desktop add ./dsh-inline-edit-0.3.0.tgz
+dsh plugin --profile desktop add ./dsh-inline-edit-0.3.0-compat.tgz
 ~~~
 
 Use web instead of desktop for a Web profile. If dsh is not on PATH, use the full path to resources/runtime/cli/bin/dsh.cmd inside the desktop installation. Restart DSH. The plugin is listed in the [awesome-dsh-plugin catalog](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin); marketplace versions follow its tarball URL after an update is merged and the index refreshes. It is not published to npm. Install from a GitHub Release asset or a marketplace.

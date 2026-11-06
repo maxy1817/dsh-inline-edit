@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 — compatibility revision (2026-11-06)
+
+- Keep package version 0.3.0 and the original release tag. Publish corrected metadata under the maintenance tag v0.3.0-compat.1 so the marketplace reads the corrected manifest instead of cached facts for the original asset.
+- Declare explicit 0.2.1 and 0.2.2 prerelease branches in both engines.dsh and the dsh-llm peer, and accept the verified schemastery 3.19.x line alongside 3.18.x. Retain the pinned development baseline and production code.
+- Add five release compatibility regressions covering supported hosts, excluded boundaries and lockfile consistency; 339 repository tests pass. Verify 114 Host-related tests against the installed DSH 0.2.2-rc.1 runtime and import the prebuilt plugin using its actual peer packages without calling external models.
+
 ## 0.3.0
 
 - Place retained and newly added ordinary files in the same Lexical text flow as native blue atomic labels, without an added delete X. Keep images in their preview row.

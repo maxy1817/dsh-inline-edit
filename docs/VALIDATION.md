@@ -1,5 +1,15 @@
 # 验证记录
 
+## 0.3.0 兼容性声明修订
+
+2026-11-06，包内版本保持 0.3.0，生产源码与预构建 JavaScript 不变。
+
+- 用原始声明先复现市场隐藏：当前 DSH 0.2.2-rc.1 被精确 dsh-llm 0.2.1-rc.3 peer 拒绝，schemastery 3.19.0 被旧 ~3.18.5 peer 拒绝。市场显示全部后能找到条目，确认已收录而非待审核。
+- 使用标准 node-semver 增加 5 项发布契约回归，覆盖历史 rc.3/rc.5、当前 rc.1、未验证版本边界及 package/lock 一致性；先红后绿。npm run check 的构建、339 项测试与分发检查通过。
+- 使用安装版 Electron 内的 Node.js 24.21.0，将依赖映射到其实际 DSH/dsh-llm/session/attachment 0.2.2-rc.1、schemastery 3.19.0 与 zod 4.4.3；现有 core/current/host/plan 共 114 项通过。预构建 Host 插件导入及配置 schema 解析通过。没有启动日常 Host、修改配置或会话，也没有调用外部模型；本轮未重新完成新版界面验收。
+- 保留已发布 v0.3.0 标签，以维护标签 v0.3.0-compat.1 和独立修订包地址分发。市场按安装包 URL 中的标签读取声明且缓存 24 小时，单改 main 或替换旧资产不能可靠更新市场判定。
+
+
 ## 0.3.0 统一文件编辑流与完整回归
 
 2026-11-05，Windows、Node.js 24.18.0，官方 DSH 0.2.1-rc.5 Web/Host。

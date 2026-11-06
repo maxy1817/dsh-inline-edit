@@ -1,8 +1,8 @@
 # 发布到 GitHub 与插件市场
 
-当前版本：**0.3.0**。安装包：`dsh-inline-edit-0.3.0.tgz`。源码仓库为 [maxy1817/dsh-inline-edit](https://github.com/maxy1817/dsh-inline-edit)。本版让普通文件与文字处于同一编辑流，蓝色原子标签不附加删除 X，支持光标处插入、继续输入、键盘删除与撤销恢复。
+当前版本：**0.3.0**。安装包：`dsh-inline-edit-0.3.0-compat.tgz`。源码仓库为 [maxy1817/dsh-inline-edit](https://github.com/maxy1817/dsh-inline-edit)。本版让普通文件与文字处于同一编辑流，蓝色原子标签不附加删除 X，支持光标处插入、继续输入、键盘删除与撤销恢复。
 
-本地 334 项自动回归及官方 DSH 0.2.1-rc.5 隔离离线 Web/Host、实际重启恢复、浏览器文件编辑验收已通过，范围见 [验证记录](VALIDATION.md)。每次发布应等待对应 GitHub 检查通过，再发布 Release。历史首次提交 `640d86c` 的 [自动检查记录](https://github.com/maxy1817/dsh-inline-edit/actions/runs/40825170601) 仅代表当时版本。npm 发布与市场收录需分别核实。
+本地 339 项自动回归及官方 DSH 0.2.1-rc.5 隔离离线 Web/Host、实际重启恢复、浏览器文件编辑验收已通过，范围见 [验证记录](VALIDATION.md)。每次发布应等待对应 GitHub 检查通过，再发布 Release。历史首次提交 `640d86c` 的 [自动检查记录](https://github.com/maxy1817/dsh-inline-edit/actions/runs/40825170601) 仅代表当时版本。npm 发布与市场收录需分别核实。
 
 ## 1. 创建 GitHub 仓库
 
@@ -52,16 +52,16 @@ git config user.email "GitHub Settings → Emails 中显示的 noreply 邮箱"
 
 必须保留 .gitattributes 的 `src/style.css text eol=crlf` 规则：当前 CSS 通过文本加载器内嵌进 JavaScript，换行变化会导致 lib/client.js 与 CI 重新构建的结果不同。该规则解决检出差异，不改动代码逻辑。
 
-package.json 声明的 engines.dsh 范围为 `>=0.2.1-rc.3 <0.2.3-0`。rc.3 是历史契约基线，0.3.0 已完成上述 rc.5 隔离离线 Web/Host 验证，发布前另确认桌面实测通过；当前安装的 DSH 版本为 0.2.2-rc.1。这不代表范围内所有版本均已验收。设置模块的 rc.5 开发依赖用于其故障回归，不应仅为形式统一或通过安装而调整开发依赖。升级宿主后先在隔离配置重测。
+package.json 的 engines.dsh 与 dsh-llm peer 使用 `>=0.2.1-rc.3 <0.2.2-0 || >=0.2.2-rc.1 <0.2.3-0`，显式覆盖两个预发布分支；schemastery peer 为 `~3.18.5 || ~3.19.0`。新增发布契约回归会核验支持版本、排除边界与锁文件一致性。rc.3 是历史契约基线，0.3.0 已完成上述 rc.5 隔离离线 Web/Host 验证，发布前另确认桌面实测通过；当前安装的 DSH 版本为 0.2.2-rc.1。这不代表范围内所有版本均已验收。设置模块的 rc.5 开发依赖用于其故障回归，不应仅为形式统一或通过安装而调整开发依赖。升级宿主后先在隔离配置重测。
 
 ## 4. 创建可下载安装的 Release
 
 仓库首页选择 **Releases → Draft a new release**：
 
-- Tag：`v0.3.0`，目标选择 main 上刚通过 CI 的提交。
-- Release title：`dsh-inline-edit v0.3.0`。
+- 本次兼容性修订 Tag：`v0.3.0-compat.1`，目标选择 main 上刚通过 CI 的修复提交；包内 version 仍为 `0.3.0`。保留原 `v0.3.0` 标签，不强制移动。
+- Release title：`dsh-inline-edit v0.3.0 — compatibility revision`。
 - 说明可根据 CHANGELOG.md 的 0.3.0 条目填写，并保留实际验收范围。
-- 把 `dsh-inline-edit-0.3.0.tgz` 拖到附件区域。
+- 把 `dsh-inline-edit-0.3.0-compat.tgz` 拖到附件区域。
 
 核对版本和附件后再点 **Publish release**。发布前修改了任何打包文件，需要重新运行检查并打包，不要上传陈旧安装包。完整源码仓库的常规命令为：
 
@@ -71,17 +71,19 @@ npm run check
 npm pack
 ~~~
 
-npm pack 会再次执行 prepack 检查。预构建 .tgz 不包含开发源码和测试，不应在解压后的分发目录运行上述开发命令。
+npm pack 默认生成 `dsh-inline-edit-0.3.0.tgz`，本次将其重命名为 `dsh-inline-edit-0.3.0-compat.tgz` 后上传，包内版本不变。npm pack 会再次执行 prepack 检查。预构建 .tgz 不包含开发源码和测试，不应在解压后的分发目录运行上述开发命令。
 
 用户下载 Release 附件后，在所在目录安装：
 
 ~~~powershell
-dsh plugin --profile desktop add "./dsh-inline-edit-0.3.0.tgz"
+dsh plugin --profile desktop add "./dsh-inline-edit-0.3.0-compat.tgz"
 ~~~
 
 Web 用户把 desktop 改为 web。找不到 dsh 命令时，使用桌面安装目录中 `resources/runtime/cli/bin/dsh.cmd` 的完整路径。安装后重启 DSH。GitHub 自动生成的 Source code.zip/tar.gz 是源码归档，不等同于预构建插件附件。
 
 ## 5. 插件市场收录
+
+市场会从 tarball URL 对应的 Release 标签读取 package.json，成功结果缓存 24 小时。兼容性修订使用独立维护标签与下载地址，让新条目读取修复后的声明；仅替换旧资产或修改仓库 main 不足以消除旧声明。相同包版本的已安装用户需手动重装修订包。
 
 本插件已通过 [收录 PR #11091](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/11091) 合并到目录。**发布新 Release 不会自动更新目录中固定的安装包地址。** 后续版本需提交同一条目的 tarball 更新，并等待合并及索引刷新。
 
@@ -97,7 +99,7 @@ description:
   en: Edit text and attachments in DeepSeek Harness, with branch or latest-main-message regeneration modes.
   zh: 为 DeepSeek Harness 添加消息和附件编辑，可选择新分支或仅最近主消息的当前对话重新生成。
 icon: https://raw.githubusercontent.com/maxy1817/dsh-inline-edit/main/assets/icon-180.png
-tarball: https://github.com/maxy1817/dsh-inline-edit/releases/download/v0.3.0/dsh-inline-edit-0.3.0.tgz
+tarball: https://github.com/maxy1817/dsh-inline-edit/releases/download/v0.3.0-compat.1/dsh-inline-edit-0.3.0-compat.tgz
 ~~~
 
 必须先实际发布这个 Release 及附件，再提交带该 tarball 地址的条目。通过维护者审查合并后仍需等待索引刷新；不同市场的收录流程不完全相同。
