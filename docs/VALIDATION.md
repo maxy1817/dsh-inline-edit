@@ -1,5 +1,16 @@
 # 验证记录
 
+## 0.3.0 历史发布入口修订
+
+2026-11-07，针对仍固定旧 `v0.3.0` 下载地址的市场目录，已修订历史发布入口，包内版本及生产代码不变。独立 `v0.3.0-compat.1` 标签与附件继续保留。
+
+- 已只读核实市场实现：兼容性从 tarball URL 中的 Release 标签读取 package.json，不读取附件内部声明；成功声明按仓库与 tarball URL 缓存 24 小时。因此改 main 或只替换附件不足以改变旧条目的兼容判定，单改标签也不足以修复实际安装。
+- 已只读核实渠道差异：官网目录已指向 `v0.3.0-compat.1/dsh-inline-edit-0.3.0-compat.tgz`，npm/CDN 目录仍指向 `v0.3.0/dsh-inline-edit-0.3.0.tgz`。条目合并与 npm/CDN 目录发布是独立步骤。
+- 原标签已保存为 [`v0.3.0-original`](https://github.com/maxy1817/dsh-inline-edit/tree/v0.3.0-original)，指向 `9baa93daa3affa1680597d7ee37bd505ee626d78`。原资产 ID `713995875` 未删除，重命名为 [`dsh-inline-edit-0.3.0-original.tgz`](https://github.com/maxy1817/dsh-inline-edit/releases/download/v0.3.0/dsh-inline-edit-0.3.0-original.tgz)；实际下载 SHA-256 为 `ba1dceaf2132ac6ce09168d5aa171708e7f675d36917fd1cabf371a610933dc5`。
+- [`v0.3.0`](https://github.com/maxy1817/dsh-inline-edit/tree/v0.3.0) 已指向兼容修复提交 `a146c85ea7cc4990c4fd39bef8f695f8b8fa39c3`。原下载地址 [`dsh-inline-edit-0.3.0.tgz`](https://github.com/maxy1817/dsh-inline-edit/releases/download/v0.3.0/dsh-inline-edit-0.3.0.tgz) 的新资产 ID 为 `719253088`，实际下载 SHA-256 为 `b782c730d7b07a87d87b66575a468f315520ebd1232b4d0f0af76b1de218c44e`，与独立 compat 附件相同。原始标签、原始附件及 compat 入口均已回读核验。
+- 公开原始下载 URL 与公开原始标签的 package.json 均已实际回读到新内容，包内清单与标签及 main 的安装声明一致，版本仍为 `0.3.0`。`engines.dsh` 与 dsh-llm peer 均显式覆盖 `0.2.2-rc.1`，schemastery peer 接受已验证的 `3.19.0`。原包与修订包中共 16 个生产 JavaScript 和图片文件逐文件 SHA-256 相同。
+- 本轮重新运行 `npm run check`：构建、339 项自动测试和分发结构检查通过。未重新运行桌面界面或外部模型验收；未对用户客户端已缓存的市场标签作消红验收。客户端旧声明缓存最长保留 24 小时，不能由远端修订主动清除。本任务未修改用户 DSH 安装、配置或缓存。
+
 ## 0.3.0 兼容性声明修订
 
 2026-11-06，包内版本保持 0.3.0，生产源码与预构建 JavaScript 不变。
@@ -7,7 +18,7 @@
 - 用原始声明先复现市场隐藏：当前 DSH 0.2.2-rc.1 被精确 dsh-llm 0.2.1-rc.3 peer 拒绝，schemastery 3.19.0 被旧 ~3.18.5 peer 拒绝。市场显示全部后能找到条目，确认已收录而非待审核。
 - 使用标准 node-semver 增加 5 项发布契约回归，覆盖历史 rc.3/rc.5、当前 rc.1、未验证版本边界及 package/lock 一致性；先红后绿。npm run check 的构建、339 项测试与分发检查通过。
 - 使用安装版 Electron 内的 Node.js 24.21.0，将依赖映射到其实际 DSH/dsh-llm/session/attachment 0.2.2-rc.1、schemastery 3.19.0 与 zod 4.4.3；现有 core/current/host/plan 共 114 项通过。预构建 Host 插件导入及配置 schema 解析通过。没有启动日常 Host、修改配置或会话，也没有调用外部模型；本轮未重新完成新版界面验收。
-- 保留已发布 v0.3.0 标签，以维护标签 v0.3.0-compat.1 和独立修订包地址分发。市场按安装包 URL 中的标签读取声明且缓存 24 小时，单改 main 或替换旧资产不能可靠更新市场判定。
+- 首次以维护标签 v0.3.0-compat.1 和独立修订包地址分发，保留当时的 v0.3.0 入口。为兼容尚未更新的 npm/CDN 目录，后续历史入口修订及原始发布保留方式见上节；远端结果分别核验，不沿用本节的本地测试结论。
 
 
 ## 0.3.0 统一文件编辑流与完整回归

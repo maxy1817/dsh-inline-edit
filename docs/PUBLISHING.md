@@ -29,7 +29,7 @@ git remote add origin https://github.com/maxy1817/dsh-inline-edit.git
 git push -u origin main
 ~~~
 
-提交前确认列表里没有 node_modules、.env、密钥或私人文件。当前 .gitignore 会排除 node_modules、常见缓存、日志、.env 和所有 .tgz；安装包单独放到 Release。不要使用强制推送来处理远程已有内容。
+提交前确认列表里没有 node_modules、.env、密钥或私人文件。当前 .gitignore 会排除 node_modules、常见缓存、日志、.env 和所有 .tgz；安装包单独放到 Release。常规源码分支更新不要使用强制推送；下述经明确授权的历史发布标签修订需单独备份和核验。
 
 若 Git 提示缺少作者信息，只设置当前仓库即可：
 
@@ -58,7 +58,7 @@ package.json 的 engines.dsh 与 dsh-llm peer 使用 `>=0.2.1-rc.3 <0.2.2-0 || >
 
 仓库首页选择 **Releases → Draft a new release**：
 
-- 本次兼容性修订 Tag：`v0.3.0-compat.1`，目标选择 main 上刚通过 CI 的修复提交；包内 version 仍为 `0.3.0`。保留原 `v0.3.0` 标签，不强制移动。
+- 独立兼容性修订 Tag：`v0.3.0-compat.1`，目标选择 main 上刚通过 CI 的修复提交；包内 version 仍为 `0.3.0`。此入口继续保留，历史 `v0.3.0` 入口的修订另见下文。
 - Release title：`dsh-inline-edit v0.3.0 — compatibility revision`。
 - 说明可根据 CHANGELOG.md 的 0.3.0 条目填写，并保留实际验收范围。
 - 把 `dsh-inline-edit-0.3.0-compat.tgz` 拖到附件区域。
@@ -81,9 +81,19 @@ dsh plugin --profile desktop add "./dsh-inline-edit-0.3.0-compat.tgz"
 
 Web 用户把 desktop 改为 web。找不到 dsh 命令时，使用桌面安装目录中 `resources/runtime/cli/bin/dsh.cmd` 的完整路径。安装后重启 DSH。GitHub 自动生成的 Source code.zip/tar.gz 是源码归档，不等同于预构建插件附件。
 
+### 历史 v0.3.0 入口兼容性修订
+
+2026-11-07，为兼容仍固定旧下载地址的市场目录，已同步修订 `v0.3.0` 标签所读到的安装声明与 `dsh-inline-edit-0.3.0.tgz` 附件。包内版本仍为 `0.3.0`；远端安装包的 16 个生产 JavaScript 与图片资源逐文件一致。修订范围为已验证的兼容性元数据、对应发布说明与打包文档。
+
+先把原标签指向保存为 `v0.3.0-original`，暂存上传并校验修订包，再将原始附件重命名为 `dsh-inline-edit-0.3.0-original.tgz` 保留，修订附件接回原文件名。原下载地址实际返回正确修订包后，才把 `v0.3.0` 标签指向兼容修复提交。`v0.3.0-compat.1` 与其独立附件继续保留。这是一次明确记录、保留原始文件的历史入口修订，不能用于常规覆盖已发布版本。
+
+原始与修订标签的提交、附件 SHA-256 及实际下载比对结果已记入 [验证记录](VALIDATION.md)。公开原始下载地址及标签下的 package.json 均已回读通过，Release 正文已公开说明本次历史修订。原下载地址和源码归档的内容已变化，已有锁文件的完整性校验值及下载代理缓存仍可能引用原包。远端核验通过不代表客户端已缓存的市场标签立即变化。
+
 ## 5. 插件市场收录
 
-市场会从 tarball URL 对应的 Release 标签读取 package.json，成功结果缓存 24 小时。兼容性修订使用独立维护标签与下载地址，让新条目读取修复后的声明；仅替换旧资产或修改仓库 main 不足以消除旧声明。相同包版本的已安装用户需手动重装修订包。
+市场会从 tarball URL 对应的 Release 标签读取 package.json，成功结果按仓库与安装包 URL 缓存 24 小时。仅替换旧附件或修改仓库 main 不会改变旧 URL 对应标签里的声明；仅改标签而保留不兼容的旧附件，则会造成标签判定与实际安装不一致。历史入口修订必须同步两者；已缓存旧声明的客户端仍需等该条缓存到期后重新读取，刷新网页本身不保证立即消红。新维护标签与新下载 URL 使用不同缓存键。相同包版本的已安装用户仍需手动重装修订包，远端修订不会自动修改其本地安装。
+
+官网目录与 npm/CDN 目录是不同发布渠道：GitHub 条目合并并在官网生效，不代表 `dsh-plugin-catalog` 的 npm 包已发布或 CDN 已读到新目录。2026-11-07 只读检查时，官网条目已指向 `v0.3.0-compat.1`，npm/CDN 条目仍指向旧 `v0.3.0`。这是修订历史入口的原因；后续应分别核实两个渠道的实际 tarball 地址，不以收录数量或 GitHub 合并状态代替发布验证。
 
 本插件已通过 [收录 PR #11091](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/11091) 合并到目录。**发布新 Release 不会自动更新目录中固定的安装包地址。** 后续版本需提交同一条目的 tarball 更新，并等待合并及索引刷新。
 

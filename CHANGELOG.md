@@ -1,8 +1,14 @@
 # Changelog
 
+## 0.3.0 — historical release entry revision (2026-11-07)
+
+- Correct the manifest at the historical v0.3.0 tag together with its same-name release archive, so marketplace catalogs still pinned to the old URL receive consistent compatibility metadata. Keep package version 0.3.0 and production code unchanged.
+- Preserve the original commit as v0.3.0-original and the original archive as dsh-inline-edit-0.3.0-original.tgz. Keep v0.3.0-compat.1 and its separate compatibility archive available. Verify the canonical raw manifest, both release archives and all 16 production JavaScript/image files; exact commits and SHA-256 digests are recorded in docs/VALIDATION.md. Re-run all 339 repository tests successfully.
+- Document that the live website catalog and the npm/CDN catalog publish separately. A changed archive URL gets a separate compatibility cache key; an existing URL can retain old manifest facts for 24 hours. Remote publication does not update an installed plugin or clear a user's cache.
+
 ## 0.3.0 — compatibility revision (2026-11-06)
 
-- Keep package version 0.3.0 and the original release tag. Publish corrected metadata under the maintenance tag v0.3.0-compat.1 so the marketplace reads the corrected manifest instead of cached facts for the original asset.
+- Keep package version 0.3.0. Initially publish corrected metadata under the separate maintenance tag v0.3.0-compat.1 so updated marketplace entries read the corrected manifest; subsequent historical-entry revision and original-release preservation are recorded separately above.
 - Declare explicit 0.2.1 and 0.2.2 prerelease branches in both engines.dsh and the dsh-llm peer, and accept the verified schemastery 3.19.x line alongside 3.18.x. Retain the pinned development baseline and production code.
 - Add five release compatibility regressions covering supported hosts, excluded boundaries and lockfile consistency; 339 repository tests pass. Verify 114 Host-related tests against the installed DSH 0.2.2-rc.1 runtime and import the prebuilt plugin using its actual peer packages without calling external models.
 
