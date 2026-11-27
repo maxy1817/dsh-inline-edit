@@ -55,7 +55,7 @@ function button(name){return [...document.querySelectorAll('button')].find(el=>(
 function area(){return document.querySelector('.dsh-ie-reference-editor');}
 function lexical(){const editor=area()?.__lexicalEditor;assert.ok(editor,'the mounted textbox must own a real Lexical editor');return editor;}
 function projection(editor=lexical()){return editor.getEditorState().read(()=>api.$referenceLayout().text);}
-let root;
+let root,mountCount=0;
 async function unmount(){if(root){await act(async()=>root.unmount());root=null;}}
 async function click(name){assert.ok(button(name),name);await act(async()=>button(name).click());}
 async function edit(update,editor=lexical()){await act(async()=>editor.update(update,{discrete:true,tag:api.HISTORY_PUSH_TAG}));}
@@ -78,7 +78,7 @@ async function dispatch(type,data={},target=area()){
 async function key(options){const event=new KeyboardEvent('keydown',{bubbles:true,cancelable:true,...options});await act(async()=>area().dispatchEvent(event));return event;}
 async function mountMessage(overrides={}){
   await unmount();const calls=[],opened=[];
-  const props={node:{kind:'user',data:{seq:3,time:0,content:[{type:'text',text:original},{type:'file',attachment:retained}]}},sessionId:'source',
+  const props={node:{kind:'user',data:{seq:3,time:0,content:[{type:'text',text:original},{type:'file',attachment:retained}]}},sessionId:`source-${++mountCount}`,
     useSession:()=>({openState:'open',running:false}),renderFactorySlot:(_,props)=>React.createElement('p',{},props.content.text),
     evaluateUserText:evaluator,coordinator:{save:async args=>{calls.push(args);return {childId:'child'};}},openSession:id=>opened.push(id),...overrides};
   root=createRoot(document.getElementById('root'));
@@ -233,9 +233,17 @@ test('parent attachment state follows deleting and undoing a newly pasted file b
 test('cutting text and file tokens updates both parent states atomically while preserving image attachments',async()=>{
   const image={attachmentId:'image',name:'keep.png',bytes:4,mediaType:'image/png'};
   const {calls}=await mountMessage({node:{kind:'user',data:{seq:3,time:0,content:[{type:'text',text:original},{type:'file',attachment:retained},{type:'image',attachment:image}]}}});await click('编辑消息');
-  await edit(()=>api.$getRoot().select(0,api.$getRoot().getChildrenSize()));await dispatch('cut',{clipboardData:{setData(){}}});
-  assert.equal(projection(),'');assert.equal(document.querySelectorAll('[data-dsh-ie-reference="attachment"]').length,0);assert.equal(document.querySelectorAll('.dsh-ie-files li').length,1);assert.equal(button('发送').disabled,false);
-  await command(api.UNDO_COMMAND);assert.equal(projection(),original);assert.equal(document.querySelectorAll('[data-dsh-ie-reference="attachment"]').length,1);
+  await edit(()=>{
+    const editorRoot=api.$getRoot(),lastParagraph=editorRoot.getLastChild();
+    const imageToken=lastParagraph.getLastChild(),selection=api.$createRangeSelection();
+    assert.equal(imageToken.getLabel(),image.name);
+    selection.anchor.set(editorRoot.getKey(),0,'element');
+    selection.focus.set(lastParagraph.getKey(),imageToken.getIndexWithinParent(),'element');
+    api.$setSelection(selection);
+  });
+  await dispatch('cut',{clipboardData:{setData(){}}});
+  assert.equal(projection(),'');assert.equal(area().textContent,image.name);assert.equal(document.querySelectorAll('.dsh-ie-files li').length,1);assert.equal(button('发送').disabled,false);
+  await command(api.UNDO_COMMAND);assert.equal(projection(),original);assert.equal(document.querySelectorAll('[data-dsh-ie-reference="attachment"]').length,2);
   await click('发送');assert.equal(calls.length,1);assert.equal(calls[0].text,original);assert.equal(calls[0].attachments.length,2);assert.equal(calls[0].attachments.find(item=>item.type==='file').ref,retained);assert.equal(calls[0].attachments.find(item=>item.type==='image').ref,image);
 });
 
@@ -328,11 +336,26 @@ test('controlled value changes reseed references, clear undo and preserve exact 
   assert.equal(projection(),value);assert.equal(document.querySelectorAll('[data-dsh-ie-reference]').length,1);await command(api.UNDO_COMMAND);assert.equal(projection(),value);
 });
 
-test('changing the keyed session unmounts the old Lexical instance and discards its draft',async()=>{
-  const {props,calls}=await mountMessage();await click('编辑消息');await atText(' 中间 ',1);await input('旧会话');const oldElement=area(),oldEditor=lexical();
+test('changing the keyed session disposes Lexical and restores its ordered draft on demand',async()=>{
+  const cut=original.indexOf(' 中间 ');
+  const content=[{type:'text',text:original.slice(0,cut)},{type:'file',attachment:retained},{type:'text',text:original.slice(cut)}];
+  const {props,calls}=await mountMessage({node:{kind:'user',data:{seq:3,time:0,content}}});
+  await click('编辑消息');await atText(' 中间 ',1);await input('旧会话');
+  const oldElement=area(),oldEditor=lexical(),oldText=projection(),orderedLabels=oldElement.textContent;
+  assert.match(orderedLabels,/有 空格\.txtold\.txt 旧会话中间 报告\.md/);
   const next=`第二会话 ${rawB}`;await act(async()=>root.render(React.createElement(api.EditableMessage,{...props,key:'next:4',sessionId:'next',node:{kind:'user',data:{seq:4,time:0,content:[{type:'text',text:next}]}},latestSeq:4})));
   assert.equal(oldEditor.getRootElement(),null);assert.equal(oldElement.__lexicalEditor,null);assert.equal(area(),null);assert.equal(calls.length,0);
   await click('编辑消息');assert.equal(projection(),next);assert.notEqual(lexical(),oldEditor);assert.equal(document.querySelectorAll('[data-dsh-ie-reference]').length,1);
+  await act(async()=>root.render(React.createElement(api.EditableMessage,{...props,key:`${props.sessionId}:3`})));
+  assert.equal(area(),null);assert.equal(calls.length,0);
+  await click('编辑消息');
+  assert.notEqual(lexical(),oldEditor);
+  assert.equal(projection(),oldText);
+  assert.equal(area().textContent,orderedLabels);
+  await click('发送');
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].attachments[0].ref,retained);
+  assert.deepEqual(calls[0].parts,[content[0],{type:'attachment',key:calls[0].attachments[0].key},{type:'text',text:oldText.slice(cut)}]);
 });
 
 test('unmount unregisters the editor and cancels pending caret animation',async()=>{

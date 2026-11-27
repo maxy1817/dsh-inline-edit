@@ -6,7 +6,7 @@ Long edit restrictions align with the button's right edge below it, rather than 
 
 Action hints use the concise “Copy,” “Edit” and “Attach files,” while accessible control labels retain their full wording. The latest-message restriction is shorter. Hovering or keyboard-focusing the clock reveals the full local date, year and time including seconds. Pointer copying releases button focus so the action row can hide when the pointer leaves; keyboard copying keeps focus. Clipboard errors remain visible.
 
-Current version: **0.3.0**. All 339 automated regressions, isolated official Web/Host checks with an offline provider, recovery after a real Host restart, and browser file-editing acceptance have passed. Desktop testing was also confirmed before release. See [Validation](docs/VALIDATION.md) for the exact scope.
+**0.3.1** fixes ordinary-file compatibility with DSH 0.2.2-rc.5 and passes 353 automated tests. See [Validation](docs/VALIDATION.md) for the scope of each version's checks.
 
 Native inline message editing for DeepSeek Harness. Change text, attachments, or both, with Cancel and Send buttons, native icons and theme tokens.
 
@@ -19,16 +19,16 @@ Failed settings reads show an explicit Retry action; reopening Settings also att
 - **Create a branch** (default): preserve the source conversation and continue in a new chat.
 - **Regenerate in this conversation**: edit only the **latest main message submitted while idle to start a task**. Retain the Session ID and sidebar chat. Later supplemental input and answers are replaced.
 
-Steering and queued input submitted during generation are excluded, even when later processed as a separate turn. The UI hides their edit button and the Host rejects edits. Earlier main messages require branch mode. Wait for generation and the pending queue to finish. DSH's built-in pending-queue editor is unchanged.
+Steering and queued input submitted during generation are excluded, even when later processed as a separate turn. The UI hides their edit button and the Host rejects edits. For an earlier main message, use its “Edit in a new branch” action. The branch is created when you send. Wait for generation and the pending queue to finish. DSH's built-in pending-queue editor is unchanged.
 
 ## Installation
 
 Supports **DSH 0.2.2-rc.1**, with desktop testing confirmed before release. Version 0.3.0 was also tested with **DSH 0.2.1-rc.5 official Web/Host on Windows**, using the desktop installation's CLI, an isolated configuration and an offline provider, including session recovery after a real Host restart. The rc.3 Web/Host checks are historical baselines. Real model providers, a physical Chinese IME, other host releases and reverse proxies were not part of automated acceptance.
 
-Download the [0.3.0 compatibility revision](https://github.com/maxy1817/dsh-inline-edit/releases/tag/v0.3.0-compat.1). Its package version remains 0.3.0; it corrects the declarations for DSH 0.2.2-rc.1 and schemastery 3.19.0. The original 0.3.0 asset does not contain this fix. Reinstalling the same version does not provide an automatic upgrade notification.
+Download the [0.3.1 plugin package](https://github.com/maxy1817/dsh-inline-edit/releases/download/v0.3.1/dsh-inline-edit-0.3.1.tgz).
 
 ~~~sh
-dsh plugin --profile desktop add ./dsh-inline-edit-0.3.0-compat.tgz
+dsh plugin --profile desktop add ./dsh-inline-edit-0.3.1.tgz
 ~~~
 
 Use web instead of desktop for a Web profile. If dsh is not on PATH, use the full path to resources/runtime/cli/bin/dsh.cmd inside the desktop installation. Restart DSH. The plugin is listed in the [awesome-dsh-plugin catalog](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin); marketplace versions follow its tarball URL after an update is merged and the index refreshes. It is not published to npm. Install from a GitHub Release asset or a marketplace.
@@ -41,7 +41,9 @@ dsh plugin --profile desktop remove dsh-inline-edit
 
 Text-only messages, text with attachments, and attachment-only messages can be resent unchanged in either mode using Send or Enter, after either a failed or successful model run. Shift+Enter inserts a newline; Ctrl/Cmd + Enter still sends, and Esc cancels. IME confirmation and repeated keydown events do not submit. No text changes or attachment replacement are needed. Empty messages, busy sessions and uncertain submissions remain blocked.
 
-Text-only edits retain attachments. Attachment-only edits can add, remove or replace files. Picking, dropping, pasting, IME, shortcuts and duplicate-send protection are supported. Removing attachments does not delete disk originals. Cancel restores the draft; errors preserve changes.
+Text-only edits retain attachments. Attachment-only edits can add, remove or replace files. Both modes preserve the order of text and attachments when submitting and displaying chat history. Picking, dropping, pasting, IME, shortcuts and duplicate-send protection are supported. Removing attachments does not delete disk originals.
+
+Drafts stay in memory in the current window. After switching back to a chat, reopen the same message editor to restore its text and attachments. Cancel and successful sends clear the draft. Reloading or closing the window also ends draft retention.
 
 Retained and newly selected ordinary files appear as native blue atomic labels in the same text flow, without an added delete X. Type before, between or after files. Picking files preserves the previous caret position and leaves the caret immediately after the new labels, ready for more text without adding spaces. Backspace, Delete or cutting a selection removes a whole file token; Undo restores the real attachment. Submission retains the original attachment reference or new file contents, and display names do not become body text.
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ImageLightbox, ReferenceChip } from '@deepseek-ai/dsh-client-ui-primitives';
+import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-primitives';
 import { Tooltip } from './vendor/dsh-tooltip.js';
 import tooltipCss from './vendor/dsh-tooltip.css';
 import { contentView, originalAttachments, newAttachment, validateAttachments, editRestriction, sessionRestriction, createEditCoordinator, nativeAdapter, MAX_TEXT_LENGTH } from './core.js';
@@ -50,14 +50,6 @@ function Attachment({ item, loadImage, onRemove, disabled, t }) {
   const remove = <Tooltip label={t.removeHint} side="bottom" portal maxWidth={280} delayMs={220} disabled={disabled}>
     <button type="button" className="dsh-ie-icon" aria-label={`${t.remove} ${item.name}`} disabled={disabled} onClick={onRemove}><Icon kind="close"/></button>
   </Tooltip>;
-  if (item.type !== 'image') return <li className="dsh-ie-file dsh-ie-file-reference">
-    <Tooltip label={`${item.name}\n${size}`} side="bottom" portal maxWidth={360} delayMs={220}>
-      <span className="dsh-ie-reference-label" tabIndex={0} aria-label={item.name}>
-        <ReferenceChip appearance="file" label={item.name} title=""/>
-      </span>
-    </Tooltip>
-    {remove}
-  </li>;
   return <li className="dsh-ie-file">
     {url ? <button type="button" className="dsh-ie-image-preview" aria-haspopup="dialog" aria-label={`${t.previewImage}：${item.name}`} onClick={() => setExpandedPreview(preview)}>
       <img src={url} alt={item.name} onError={() => setPreview(current => current === preview ? null : current)}/>
@@ -71,19 +63,59 @@ function Attachment({ item, loadImage, onRemove, disabled, t }) {
 // Store identifiers only, never draft text or attachment data. Unknown outcomes
 // remain blocked across component remounts and reloads in this browser tab.
 const pendingEdits = new Map();
-const pendingListeners = new Map();
-function subscribePending(key,listener) {
-  let listeners=pendingListeners.get(key);
-  if (!listeners) pendingListeners.set(key,listeners=new Set());
+// Drafts belong to this window, including any newly picked File objects.
+const drafts = new Map();
+const editListeners = new Map();
+let nextAttachmentKey = 0;
+function subscribeEdit(key,listener) {
+  let listeners=editListeners.get(key);
+  if (!listeners) editListeners.set(key,listeners=new Set());
   listeners.add(listener);
-  return ()=>{ listeners.delete(listener);if (!listeners.size) pendingListeners.delete(key); };
+  return ()=>{ listeners.delete(listener);if (!listeners.size) editListeners.delete(key); };
 }
 function pendingKey(sessionId,seq) { return `dsh-inline-edit:pending:${sessionId}:${seq}`; }
 function readPending(key) { try { return window.sessionStorage.getItem(key) || pendingEdits.get(key); } catch { return pendingEdits.get(key); } }
+function notifyEdit(key) { for (const listener of editListeners.get(key) ?? []) listener(); }
 function writePending(key,id) {
   if (id) pendingEdits.set(key,id); else pendingEdits.delete(key);
   try { if (id) window.sessionStorage.setItem(key,id); else window.sessionStorage.removeItem(key); } catch { /* Memory guard remains available. */ }
-  for (const listener of pendingListeners.get(key) ?? []) listener();
+  notifyEdit(key);
+}
+function writeDraft(key,draft) {
+  if (draft) drafts.set(key,draft); else drafts.delete(key);
+  notifyEdit(key);
+}
+function initialDraft(data,text,mode,references) {
+  const attachments = originalAttachments(data);
+  const attachmentsByIndex = new Map(attachments.map(item => [item.index,item]));
+  const parts = [];
+  for (const [index,block] of data.content.entries()) {
+    if (block.type === 'text' && block.text) {
+      const previous = parts.at(-1);
+      if (previous?.type === 'text') previous.text += block.text;
+      else parts.push({type:'text',text:block.text});
+    }
+    const item = attachmentsByIndex.get(index);
+    if (item) parts.push({type:'attachment',key:item.key});
+  }
+  return {text,attachments,parts,mode,rich:attachments.length > 0 || references.length > 0};
+}
+// The native content slot groups all attachments apart from the text. Give it
+// consecutive groups of one kind to keep the stored order visible.
+function orderedContentViews(data,view) {
+  if (!view.text || !view.attachments.length || view.extraBlocks.length || view.referenceLabels?.length || data.skillNames?.length) return [view];
+  const groups = [];
+  let group = [];
+  for (const block of data.content) {
+    const isText=block.type==='text';
+    if (isText && !block.text) continue;
+    if (group.length && isText !== (group[0].type==='text')) {
+      groups.push(group);
+      group = [];
+    }
+    group.push(block);
+  }
+  return [...groups,group].map(content => contentView({...data,content}));
 }
 function useCalendarDay() {
   const [now,setNow]=useState(Date.now);
@@ -101,33 +133,38 @@ function useCalendarDay() {
 export function EditableMessage({ node, sessionId, useSession, renderFactorySlot, loadImage, coordinator, openSession,mode='branch',latestSeq,supplemental=false,settingsReady=true,settingsIssue,evaluateUserText }) {
   const data = node.data;
   const view = useMemo(() => contentView(data), [data]);
+  const contentViews = useMemo(() => orderedContentViews(data,view), [data,view]);
   const hasCopyText = !!view.text.trim();
   const snapshot = useSession((state) => state);
   const language = document.documentElement.lang || navigator.language;
   const calendarDay = useCalendarDay();
   const t = labels(language);
-  const [editing, setEditing] = useState(false);
-  const [referenceEditing, setReferenceEditing] = useState(false);
-  const [initialAttachmentOffset, setInitialAttachmentOffset] = useState(null);
-  const [draftMode,setDraftMode]=useState(mode);
-  const activeMode=editing ? draftMode : mode;
-  const modeHint=activeMode==='current'?t.currentTitle:t.branchMode;
   const pending=pendingKey(sessionId,data.seq);
-  const [draft, setDraft] = useState(view.text);
-  const [attachments, setAttachments] = useState(() => originalAttachments(data));
-  const ordinaryFiles = useMemo(() => attachments.filter(item => item.type === 'file'), [attachments]);
-  const [saving, setSaving] = useState(false);
+  const subscribe=useCallback(listener=>subscribeEdit(pending,listener),[pending]);
+  const readDraft=useCallback(()=>drafts.get(pending) ?? null,[pending]);
+  const readRequest=useCallback(()=>readPending(pending) ?? null,[pending]);
+  const draftState=useSyncExternalStore(subscribe,readDraft,readDraft);
+  const pendingRequest=useSyncExternalStore(subscribe,readRequest,readRequest);
+  const [editing, setEditing] = useState(false);
+  const {text:draft='',attachments=[],parts=[],rich:referenceEditing=false}=draftState ?? {};
+  const supplementalMessage=supplemental || node.kind==='steering';
+  const olderMain=node.kind==='user' && !supplementalMessage && latestSeq>data.seq;
+  const preferredMode=draftState?.mode ?? mode;
+  const branchEntry=olderMain && (mode==='current' || preferredMode==='current');
+  const activeMode=editing ? preferredMode : branchEntry ? 'branch' : preferredMode;
+  const modeHint=activeMode==='current'?t.currentTitle:t.branchMode;
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [recoverId, setRecoverId] = useState(null);
-  const pendingSource=useMemo(()=>({subscribe:listener=>subscribePending(pending,listener),read:()=>readPending(pending) ?? null}),[pending]);
-  const pendingRequest=useSyncExternalStore(pendingSource.subscribe,pendingSource.read,pendingSource.read);
+  const [openedChild, setOpenedChild] = useState(null);
+  const recoverId=draftState?.recoverId ?? openedChild;
+  const saving=editing && !!draftState?.submitting;
   const uncertain=!!pendingRequest && !saving;
-  const editor = useRef(null), picker = useRef(null), pencil = useRef(null), nextKey = useRef(0), mounted = useRef(true), inFlight = useRef(false), copyTimer = useRef();
-  const requestId=useRef(null);
+  const editor = useRef(null), picker = useRef(null), pencil = useRef(null), mounted = useRef(true), copyTimer = useRef();
+  const initialAttachmentOffset = useRef(null);
   const section = useRef(null), scrollAnchor = useRef(null);
   const restriction = (uncertain?'currentUncertain':null) ?? (!settingsReady?settingsIssue ?? 'settingsLoading':null) ?? editRestriction(node) ?? sessionRestriction(snapshot)
-    ?? (activeMode==='current' && (supplemental || node.kind==='steering') ? 'supplemental' : null)
+    ?? (!editing && draftState?.submitting ? 'duplicate' : null)
+    ?? (activeMode==='current' && supplementalMessage ? 'supplemental' : null)
     ?? (activeMode==='current' && latestSeq!==data.seq ? latestSeq==null?'notReady':'latestOnly' : null);
   const facts = useMemo(() => ({ ...(data.referenceLabels ? { sessionLabels: data.referenceLabels } : {}), ...(data.skillNames ? { skillNames: data.skillNames } : {}) }), [data.referenceLabels, data.skillNames]);
   const references = useMemo(() => referenceEditing ? collectFileReferences(draft,evaluateUserText,facts) : [], [referenceEditing,draft,evaluateUserText,facts]);
@@ -136,9 +173,6 @@ export function EditableMessage({ node, sessionId, useSession, renderFactorySlot
     mounted.current = true;
     return () => { mounted.current = false; clearTimeout(copyTimer.current); scrollAnchor.current?.dispose(); scrollAnchor.current=null; };
   }, []);
-  useEffect(() => {
-    if (!editing) setDraft(view.text);
-  }, [view.text, editing]);
   useEffect(() => {
     if (!pendingRequest) setError(previous=>previous===t.currentUncertain?null:previous);
   }, [pendingRequest,t.currentUncertain]);
@@ -174,67 +208,100 @@ export function EditableMessage({ node, sessionId, useSession, renderFactorySlot
   function anchorLayoutChange() {
     scrollAnchor.current ??= captureEditScrollAnchor(section.current);
   }
+  function updateDraft(changes) {
+    const current=readDraft();
+    if (current) writeDraft(pending,{...current,...changes});
+  }
   function cancel(restoreFocus = true) {
-    if (inFlight.current) return;
+    if (readDraft()?.submitting) return;
     anchorLayoutChange();
-    setDraft(view.text); setAttachments(originalAttachments(data)); setError(uncertain?t.currentUncertain:null); setRecoverId(null); setEditing(false);
-    if (!uncertain) requestId.current=null;
+    writeDraft(pending,null);
+    setError(uncertain?t.currentUncertain:null); setOpenedChild(null); setEditing(false);
     if (restoreFocus) requestAnimationFrame(() => pencil.current?.focus({preventScroll:true}));
   }
   function beginEdit() {
-    if (restriction) return;
+    if (restriction || readDraft()?.submitting) return;
     anchorLayoutChange();
-    setReferenceEditing(originalAttachments(data).some(item => item.type === 'file') || collectFileReferences(view.text,evaluateUserText,facts).length > 0);
-    setInitialAttachmentOffset(null);
-    setRecoverId(null); setError(null); setDraft(view.text);
-    setAttachments(originalAttachments(data)); setDraftMode(mode); setEditing(true);
+    const existing=readDraft();
+    const next=existing ? {...existing,mode:activeMode} : initialDraft(data,view.text,activeMode,collectFileReferences(view.text,evaluateUserText,facts));
+    initialAttachmentOffset.current=null;
+    writeDraft(pending,next);
+    setOpenedChild(null); setError(null); setEditing(true);
   }
   async function save() {
-    if (inFlight.current || recoverId || uncertain) return;
+    const current=readDraft();
+    if (!current || current.submitting || current.recoverId || recoverId || uncertain) return;
     if (restriction) { setError(t[restriction]); return; }
-    if (!draft.trim() && !attachments.length) { setError(t.empty); return; }
-    inFlight.current = true; setSaving(true); setError(null);
+    if (!current.text.trim() && !current.attachments.length) { setError(t.empty); return; }
+    const requestId=crypto.randomUUID();
+    const submission={...current,submitting:true};
+    writeDraft(pending,submission);
+    if (activeMode==='current') writePending(pending,requestId);
+    setError(null);
+    let result;
     try {
-      requestId.current ??= crypto.randomUUID();
-      if (activeMode==='current') writePending(pending,requestId.current);
-      const result = await coordinator.save({ sessionId, node, text: draft, attachments,mode:activeMode,requestId:requestId.current });
-      writePending(pending,null);
-      requestId.current=null;
-      if (!mounted.current) return;
-      // Keep a recovery link even if native navigation itself fails.
-      if (result.childId) { setRecoverId(result.childId); await openSession(result.childId); }
-      if (mounted.current) { setEditing(false); setError(result.childId?t.returned:null); }
+      result=await coordinator.save({sessionId,node,text:current.text,attachments:current.attachments,parts:current.parts,mode:activeMode,requestId});
     } catch (failure) {
+      if (readDraft()===submission) writeDraft(pending,{...current,recoverId:failure.childId});
       if (failure.code!=='currentUncertain') writePending(pending,null);
-      if (mounted.current) {
-        if (failure.childId) setRecoverId(failure.childId);
-        setError(t[failure.code] ?? (activeMode==='current'?t.currentFailed:t.failed));
-        if (failure.code==='currentUncertain') writePending(pending,requestId.current);
-        if (failure.code!=='currentUncertain') requestId.current=null;
-      }
-    } finally { inFlight.current = false; if (mounted.current) setSaving(false); }
+      if (mounted.current) setError(t[failure.code] ?? (activeMode==='current'?t.currentFailed:t.failed));
+      return;
+    }
+    if (readDraft()===submission) writeDraft(pending,null);
+    writePending(pending,null);
+    if (!mounted.current) return;
+    setEditing(false);
+    if (!result.childId) return;
+    // A successful submission clears the draft even if navigation fails.
+    setOpenedChild(result.childId);
+    try { await openSession(result.childId); }
+    catch { if (mounted.current) setError(t.branchFailed); return; }
+    if (mounted.current) setError(t.returned);
   }
   function addFiles(files) {
-    if (inFlight.current || recoverId || uncertain) return;
-    const next = [...attachments, ...Array.from(files).map(file => newAttachment(file, `new:${++nextKey.current}`))];
+    const current=readDraft();
+    if (!current || current.submitting || recoverId || uncertain || !files.length) return;
+    const added=Array.from(files,file=>newAttachment(file,`new:${++nextAttachmentKey}`));
+    const next=[...current.attachments,...added];
     try {
       validateAttachments(next, data);
       anchorLayoutChange();
-      if (!referenceEditing && next.some(item => item.type === 'file')) {
-        setInitialAttachmentOffset(editor.current?.selectionStart ?? draft.length);
-        setReferenceEditing(true);
+      if (current.rich) updateDraft({attachments:next});
+      else {
+        const offset=editor.current?.selectionStart ?? current.text.length;
+        initialAttachmentOffset.current=offset;
+        const before=current.text.slice(0,offset),after=current.text.slice(offset);
+        const ordered=added.map(item=>({type:'attachment',key:item.key}));
+        if (before) ordered.unshift({type:'text',text:before});
+        if (after) ordered.push({type:'text',text:after});
+        updateDraft({attachments:next,parts:ordered,rich:true});
       }
-      setAttachments(next); setError(null);
+      setError(null);
     }
     catch (failure) { setError(t[failure.code] ?? t.failed); }
   }
-  function changeOrdinaryFiles(files) {
-    if (inFlight.current || recoverId || uncertain) return false;
-    const next = [...attachments.filter(item => item.type !== 'file'), ...files];
-    try { validateAttachments(next, data); anchorLayoutChange(); setAttachments(next); setError(null); return true; }
+  function changeAttachments(items) {
+    const current=readDraft();
+    if (!current || current.submitting || recoverId || uncertain) return false;
+    try { validateAttachments(items,data); updateDraft({attachments:items}); return true; }
     catch (failure) { setError(t[failure.code] ?? t.failed); return false; }
   }
-  function changeDraft(text) { anchorLayoutChange(); setDraft(text); setError(null); }
+  function changeLayout(_keys,ordered) {
+    const current=readDraft();
+    if (!current || current.submitting || uncertain) return;
+    anchorLayoutChange();
+    const text=ordered.filter(part=>part.type==='text').map(part=>part.text).join('');
+    updateDraft({text,parts:ordered});
+    if (!recoverId) setError(null);
+  }
+  function changeDraft(text) { changeLayout([],text ? [{type:'text',text}] : []); }
+  function removeImage(key) {
+    const current=readDraft();
+    if (!current || current.submitting || recoverId || uncertain) return;
+    anchorLayoutChange();
+    updateDraft({attachments:current.attachments.filter(item=>item.key!==key),parts:current.parts.filter(part=>part.key!==key)});
+    setError(null);
+  }
   function editorKeyDown(event) {
     // A Chinese IME's candidate-confirming Enter must never send/cancel.
     if (event.nativeEvent.isComposing || event.isComposing || event.keyCode === 229) return;
@@ -260,11 +327,12 @@ export function EditableMessage({ node, sessionId, useSession, renderFactorySlot
     {editing ? <div className="dsh-ie-editor" onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }}
       onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); addFiles(event.dataTransfer.files); } }}>
       {attachments.some(item => item.type === 'image') && <ul className="dsh-ie-files" aria-label={t.attachments}>{attachments.filter(item => item.type === 'image').map(item =>
-        <Attachment key={item.key} item={item} loadImage={loadImage} t={t} disabled={saving || !!recoverId || uncertain} onRemove={() => { anchorLayoutChange(); setAttachments(previous => previous.filter(file => file.key !== item.key)); setError(null); }}/>
+        <Attachment key={item.key} item={item} loadImage={loadImage} t={t} disabled={saving || !!recoverId || uncertain} onRemove={() => removeImage(item.key)}/>
       )}</ul>}
       {referenceEditing ? <ReferenceEditor ref={editor} label={t.label} value={draft} references={references}
-        attachments={ordinaryFiles} onAttachmentsChange={changeOrdinaryFiles} initialAttachmentOffset={initialAttachmentOffset}
-        disabled={saving || uncertain} maxLength={MAX_TEXT_LENGTH} onChange={changeDraft}
+        attachments={attachments} onAttachmentsChange={changeAttachments} onAttachmentLayout={changeLayout} initialParts={parts}
+        initialAttachmentOffset={initialAttachmentOffset.current}
+        disabled={saving || uncertain} maxLength={MAX_TEXT_LENGTH}
         onKeyDown={editorKeyDown} onFiles={addFiles} onLimit={() => setError(t.tooLong)}/>
       : <textarea ref={editor} aria-label={t.label} value={draft} disabled={saving || uncertain} maxLength={MAX_TEXT_LENGTH}
         onChange={(event) => changeDraft(event.target.value)}
@@ -285,7 +353,9 @@ export function EditableMessage({ node, sessionId, useSession, renderFactorySlot
         <button type="button" className="dsh-ie-save" disabled={saving || !!restriction || !!recoverId || uncertain || (!draft.trim() && !attachments.length)} onClick={() => void save()}>{saving ? t.saving : t.save}</button>
       </div></div>
     </div> : <>
-      {renderFactorySlot('conversation.chat.user.content', { content: view, loadImage, facts, interactive: true })}
+      {contentViews.map((content,index)=><React.Fragment key={index}>
+        {renderFactorySlot('conversation.chat.user.content', {content,loadImage,facts,interactive:true})}
+      </React.Fragment>)}
       <div className="dsh-ie-actions">
         {clock && <Tooltip label={fullClock} side="bottom" portal maxWidth={280} delayMs={220}>
           <time className="dsh-ie-time" tabIndex={0} aria-label={fullClock} dateTime={new Date(data.time).toISOString()}
@@ -294,8 +364,8 @@ export function EditableMessage({ node, sessionId, useSession, renderFactorySlot
         {hasCopyText && <Tooltip label={copied ? t.copied : t.copyHint} side="bottom" portal maxWidth={280} delayMs={220}>
           <button type="button" className="dsh-ie-icon" aria-label={copied ? t.copied : t.copy} onClick={event => { void copy(); if (event.detail > 0) event.currentTarget.blur(); }}><Icon kind={copied ? 'check' : 'copy'}/></button>
         </Tooltip>}
-        {!(activeMode==='current' && (supplemental || node.kind==='steering')) && <Tooltip label={restriction ? t[restriction] : t.editHint} side="bottom" align={restriction ? 'end' : 'center'} portal maxWidth={280} delayMs={220}>
-          <button type="button" ref={pencil} className="dsh-ie-icon" aria-label={t.edit} aria-disabled={!!restriction} aria-description={restriction ? t[restriction] : undefined}
+        {!(mode==='current' && supplementalMessage) && <Tooltip label={restriction ? t[restriction] : branchEntry ? t.editInBranch : t.editHint} side="bottom" align={restriction ? 'end' : 'center'} portal maxWidth={280} delayMs={220}>
+          <button type="button" ref={pencil} className="dsh-ie-icon" aria-label={branchEntry ? t.editInBranch : t.edit} aria-disabled={!!restriction} aria-description={restriction ? t[restriction] : undefined}
             onClick={beginEdit}><Icon kind="edit"/></button>
         </Tooltip>
         }
@@ -304,7 +374,7 @@ export function EditableMessage({ node, sessionId, useSession, renderFactorySlot
     {(error || uncertain) && <div className="dsh-ie-error" role="status">{error || t.currentUncertain}</div>}
     {uncertain && <button type="button" className="dsh-ie-recover" onClick={()=>{
       if (!window.confirm(t.confirmChecked)) return;
-      writePending(pending,null);requestId.current=null;setError(null);setEditing(false);
+      writePending(pending,null);setError(null);setEditing(false);
     }}>{t.checkedOutcome}</button>}
     {recoverId && <button type="button" className="dsh-ie-recover" onClick={() => Promise.resolve(openSession(recoverId)).catch(() => setError(t.branchFailed))}>{t.recover}</button>}
   </section>;
@@ -317,7 +387,7 @@ export function apply(ctx) {
   ctx.effect(() => {
     const style = document.createElement('style');
     style.dataset.dshInlineEditStyle = ''; style.textContent = css + tooltipCss; document.head.append(style);
-    return () => { coordinator.dispose(); style.remove(); };
+    return () => { coordinator.dispose(); drafts.clear(); style.remove(); };
   });
   function Message(props) {
     const state=useSettings(form,describe);

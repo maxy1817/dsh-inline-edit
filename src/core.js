@@ -68,11 +68,29 @@ export function toBase64(bytes) {
   for (let i=0;i<bytes.length;i+=8192) binary += String.fromCharCode(...bytes.subarray(i,i+8192));
   return btoa(binary);
 }
-async function prepareAttachments(items, source, api, check) {
+function orderedEditContent(parts, text, attachments) {
+  if (parts === undefined) return text ? [{type:'text',text}, ...attachments] : attachments;
+  if (!Array.isArray(parts) || parts.length > MAX_ATTACHMENTS * 2 + 1) throw new EditError('unsupported');
+  const remaining = new Map(attachments.map(item => [item.key, item]));
+  const ordered = [], textSegments = [];
+  for (const part of parts) {
+    if (part?.type === 'text' && typeof part.text === 'string') {
+      textSegments.push(part.text);
+      if (part.text) ordered.push({type:'text',text:part.text});
+      continue;
+    }
+    if (part?.type !== 'attachment' || !remaining.has(part.key)) throw new EditError('unsupported');
+    ordered.push(remaining.get(part.key));
+    remaining.delete(part.key);
+  }
+  if (remaining.size || textSegments.join('') !== text) throw new EditError('unsupported');
+  return ordered;
+}
+async function prepareContent(items, source, api, check) {
   const prepared = [];
   for (const item of items) {
     check();
-    if (item.type === 'file') { prepared.push(item); continue; }
+    if (item.type !== 'image') { prepared.push(item); continue; }
     const image = item.origin === 'original' ? await api.readImage(source,item.ref.attachmentId) : {
       attachment:{ mediaType:item.mediaType,name:item.name }, data:new Uint8Array(await item.file.arrayBuffer()),
     };
@@ -89,12 +107,13 @@ export function createEditCoordinator(api) {
   function check() { if (lifetime.signal.aborted) throw new EditError('disposed'); }
   return {
     dispose() { lifetime.abort(); },
-    async save({sessionId,node,text,attachments=originalAttachments(node.data),mode='branch',requestId}) {
+    async save({sessionId,node,text,attachments=originalAttachments(node.data),parts,mode='branch',requestId}) {
       check();
       const restriction = editRestriction(node); if (restriction) throw new EditError(restriction);
       if (typeof text !== 'string' || (!text.trim() && !attachments.length)) throw new EditError('empty');
       if (text.length > MAX_TEXT_LENGTH) throw new EditError('tooLong');
       validateAttachments(attachments,node.data);
+      const ordered = orderedEditContent(parts, text, attachments);
       if (busy.has(sessionId)) throw new EditError('duplicate');
       busy.add(sessionId); let childId, stage='prepare';
       try {
@@ -103,15 +122,16 @@ export function createEditCoordinator(api) {
           if (mode === 'current') {
             if (node.kind !== 'user') throw new EditError('steeringCurrent');
             const plan=await api.planCurrent(sessionId,node.data.seq,lifetime.signal);
-            const content=text ? [{type:'text',text}] : [];
-            for (const item of attachments) {
+            const content=[];
+            for (const item of ordered) {
               check();
-              if (item.origin==='original') content.push({type:'original',index:item.index});
+              if (item.type==='text') content.push(item);
+              else if (item.origin==='original') content.push({type:'original',index:item.index});
               else if (item.type==='file') {
                 const receipt=await api.uploadFile(sessionId,item.file,lifetime.signal);
                 content.push({type:'file',receiptId:receipt.receiptId});
               } else {
-                const [image]=await prepareAttachments([item],source,api,check); content.push(image);
+                const [image]=await prepareContent([item],source,api,check); content.push(image);
               }
             }
             check(); stage='current';
@@ -119,22 +139,41 @@ export function createEditCoordinator(api) {
           }
           const atSeq = api.resolveBoundary ? await api.resolveBoundary(sessionId, node.data.seq, lifetime.signal) : node.data.seq - 1;
           if (!Number.isSafeInteger(atSeq) || atSeq < 0 || atSeq >= node.data.seq) throw new EditError('unsupported');
-          const prepared=await prepareAttachments(attachments,source,api,check);
+          const prepared=await prepareContent(ordered,source,api,check);
           check(); const latestReason=sessionRestriction(source.getSnapshot()); if (latestReason) throw new EditError(latestReason);
           stage='fork';
           // atSeq is inclusive; seq itself would retain the old prompt.
-          childId=await api.fork(sessionId,atSeq);
+          const indexes = prepared.filter(item => item.type === 'file' && item.origin === 'original').map(item => item.index);
+          let retainedReceipts;
+          if (indexes.length && api.forkWithFiles) {
+            const branch = await api.forkWithFiles({sourceId:sessionId, seq:node.data.seq, atSeq, indexes}, lifetime.signal);
+            if (typeof branch?.childId !== 'string' || !branch.childId) throw new EditError('failed');
+            childId = branch.childId;
+            stage = 'attachments';
+            if (!Array.isArray(branch.receiptIds) || branch.receiptIds.length !== indexes.length
+              || branch.receiptIds.some(id => typeof id !== 'string' || !id)) throw new EditError('fileRead');
+            retainedReceipts = new Map(indexes.map((index, i) => [index, branch.receiptIds[i]]));
+            check();
+            stage = 'open';
+            await api.refreshSessions(childId);
+          } else {
+            childId = await api.fork(sessionId,atSeq);
+          }
           check(); stage='open';
           return await api.using(childId,async child => {
             check(); if (sessionRestriction(child.getSnapshot())) throw new EditError('notReady');
-            stage='attachments'; const content=text ? [{type:'text',text}] : [];
+            stage='attachments'; const content=[];
             for (const item of prepared) {
               check();
-              if (item.type==='image') { content.push(item); continue; }
-              const receipt=item.origin==='original'
-                ? await api.reuseFile({sourceId:sessionId,childId,seq:node.data.seq,index:item.index},lifetime.signal)
-                : await api.uploadFile(childId,item.file,lifetime.signal);
-              check(); content.push({type:'file',receiptId:receipt.receiptId});
+              if (item.type!=='file') { content.push(item); continue; }
+              let receiptId = item.origin === 'original' ? retainedReceipts?.get(item.index) : undefined;
+              if (receiptId === undefined) {
+                const receipt = item.origin === 'original'
+                  ? await api.reuseFile({sourceId:sessionId,childId,seq:node.data.seq,index:item.index},lifetime.signal)
+                  : await api.uploadFile(childId,item.file,lifetime.signal);
+                receiptId = receipt.receiptId;
+              }
+              check(); content.push({type:'file',receiptId});
             }
             check(); stage='prompt'; await api.prompt(child,content,lifetime.signal);
             return {childId,sourceId:sessionId,atSeq};
@@ -163,6 +202,12 @@ export function nativeAdapter(ctx) {
     },
     using(id,operation) { return ctx.sessions.using(id,{source:'controllerOperation'},async reference => operation((await reference.ready).session)); },
     fork(sessionId,atSeq) { return ctx.sessions.fork({sessionId,atSeq,increaseTitle:false,allowMigration:false}); },
+    forkWithFiles(request,signal) { return post('api/dsh-inline-edit/fork-files',request,signal); },
+    async refreshSessions(childId) {
+      await ctx.sessions.refresh();
+      // An in-flight list refresh may have started before the Host fork.
+      if (!ctx.sessions.list.getSnapshot().byId[childId]) await ctx.sessions.refresh();
+    },
     async readImage(session,id) { const result=await session.readAttachment(id); if (!result.ok) throw new EditError('imageRead'); return result.value; },
     async uploadFile(childId,file,signal) {
       const result=await ctx.fileUpload.upload(childId,file,file.name || undefined,signal);

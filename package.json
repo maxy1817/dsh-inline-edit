@@ -1,6 +1,6 @@
 {
   "name": "dsh-inline-edit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "为 DeepSeek Harness 添加原地消息编辑与附件增删，可选择新建分支或在当前对话重新生成。",
   "type": "module",
   "license": "MIT",

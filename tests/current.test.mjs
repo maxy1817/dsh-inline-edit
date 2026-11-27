@@ -330,6 +330,32 @@ test('attachment-only removal and addition retain unchanged text and validate re
   await editCurrent(f.ctx,f.input,signal);
   assert.deepEqual(f.agent.inbox.nextTurn[0].content.map(b=>b.type==='text'?b.text:b.attachment.name),['OLD','new.txt']);
 });
+test('current edit queues the file reference from a DSH 0.2.2 staged receipt',async()=>{
+  const f=fixture(), attachment={attachmentId:'new-csv',name:'new.csv',bytes:8};
+  f.input.content=[txt('NEW'),{type:'file',receiptId:'upload'}];
+  f.ctx.fileUploads.resolve=(agent,id)=>{
+    assert.strictEqual(agent,f.agent);
+    assert.equal(id,'upload');
+    return {type:'file',attachment};
+  };
+  const lifecycle=[];
+  f.ctx.fileUploads.bindPrompt=(agent,receipts,requestId)=>{
+    assert.strictEqual(agent,f.agent);
+    assert.deepEqual(receipts,['upload']);
+    assert.equal(requestId,f.input.requestId);
+    return {commit(){lifecycle.push('commit');},[Symbol.dispose](){lifecycle.push('dispose');}};
+  };
+  assert.deepEqual(await editCurrent(f.ctx,f.input,signal),{sessionId:f.agent.id,accepted:true});
+  assert.deepEqual(f.agent.inbox.nextTurn[0].content,[txt('NEW'),{type:'file',attachment}]);
+  assert.deepEqual(lifecycle,['commit','dispose']);
+});
+test('current edit applies the file size limit to the nested reference before changing history',async()=>{
+  const f=fixture(), before=f.session.snapshotEvents().length;
+  f.input.content=[txt('NEW'),{type:'file',receiptId:'upload'}];
+  f.ctx.fileUploads.resolve=()=>({type:'file',attachment:{attachmentId:'large-csv',name:'large.csv',bytes:64*1024*1024+1}});
+  await assert.rejects(editCurrent(f.ctx,f.input,signal),e=>e.editCode==='fileSize');
+  assertUntouched(f,before);
+});
 test('text-only change reuses the authorized old attachment without copying or deleting its file',async()=>{
   const f=fixture();f.input.content.push({type:'original',index:1});
   await editCurrent(f.ctx,f.input,signal);assert.equal(f.agent.inbox.nextTurn[0].content[1].attachment.attachmentId,'old-file');

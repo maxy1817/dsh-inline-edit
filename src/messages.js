@@ -1,5 +1,5 @@
 const zh = {
-  settingsTitle:'消息编辑', autoSave:'自动保存', branchBadge:'新聊天', currentBadge:'仅最近主消息', notesTitle:'使用说明', latestNote:'主消息指空闲时发送、发起一轮任务的消息。运行时插话或排队追加的补充消息不支持原地编辑；更早的主消息请选择「增加分支」。', settingsIntro:'选择编辑已发送消息后的处理方式。设置自动保存，仅影响之后的编辑；切换选项不会立即改动已有对话。',
+  settingsTitle:'消息编辑', autoSave:'自动保存', branchBadge:'新聊天', currentBadge:'仅最近主消息', notesTitle:'使用说明', latestNote:'主消息指空闲时发送、发起一轮任务的消息。运行时追加的补充消息不支持原地编辑。更早的主消息可直接点「在新分支编辑」。', settingsIntro:'选择编辑已发送消息后的处理方式。设置自动保存，仅影响之后的编辑；切换选项不会立即改动已有对话。',
   modeLabel:'重新生成方式', branchTitle:'增加分支', branchDescription:'从修改的位置另建一个聊天继续，保留原对话。适合修改较早的消息。',
   currentTitle:'在当前对话重新生成', currentDescription:'仅修改最近一条发起任务的主消息，可调整文字和附件。该消息之后的补充消息和回答会一并替换，侧边栏不新增聊天。',
   branchMode:'在新分支重新生成',
@@ -16,7 +16,7 @@ const zh = {
   currentUncertain:'暂时无法确认提交状态，请先刷新并检查当前聊天。关闭编辑框不会解锁；确认结果前不要重复提交。',
   checkedOutcome:'我已检查提交结果', confirmChecked:'请确认已刷新并检查会话与待发送队列。解锁不撤销上次请求；如果尚未确认，请取消。仍要解锁吗？',
 
-  edit: '编辑消息', editHint: '编辑', copy: '复制消息', copyHint: '复制', copied: '已复制', copyFailed: '复制失败，请手动选择文本复制。',
+  edit: '编辑消息', editHint: '编辑', editInBranch: '在新分支编辑', copy: '复制消息', copyHint: '复制', copied: '已复制', copyFailed: '复制失败，请手动选择文本复制。',
   label: '编辑这条消息', cancel: '取消', save: '发送', saving: '发送中…',
   attachments: '消息附件', addFiles: '添加文件', addHint: '添加附件', remove: '移除', removeHint: '仅从这条消息移除，不删除原文件',
   previewImage: '查看图片', imagePreview: '图片预览', closePreview: '关闭预览',
@@ -37,7 +37,7 @@ const zh = {
   promptRejected: '未能确认消息已被接受。请打开新分支检查，必要时在分支的输入框中重新发送。',
 };
 const en = {
-  settingsTitle:'Message editing', autoSave:'Saved automatically', branchBadge:'New chat', currentBadge:'Latest main message', notesTitle:'Usage notes', latestNote:'A main message starts a task while idle. Steering or queued input added during generation cannot be edited here. Use branches for earlier main messages.', settingsIntro:'This saved setting applies to future edits. Switching options does not change existing conversations.',
+  settingsTitle:'Message editing', autoSave:'Saved automatically', branchBadge:'New chat', currentBadge:'Latest main message', notesTitle:'Usage notes', latestNote:'A main message starts a task while idle. Supplemental input added during generation cannot be edited in place. Choose “Edit in a new branch” on an earlier main message.', settingsIntro:'This saved setting applies to future edits. Switching options does not change existing conversations.',
   modeLabel:'Regeneration mode', branchTitle:'Create a branch', branchDescription:'Keep the original conversation and continue in a new chat from the edit.',
   currentTitle:'Regenerate in this conversation', currentDescription:'Edit the latest message that started a task, including its text or attachments. Later supplemental messages and answers are replaced. No new sidebar chat is created.',
   branchMode:'Regenerate in a new branch',
@@ -54,7 +54,7 @@ const en = {
   currentUncertain:'Submission status is uncertain. Refresh and inspect this chat before retrying. Closing the editor does not unlock submission.',
   checkedOutcome:'I checked the submission outcome', confirmChecked:'Confirm you refreshed and checked the conversation and pending queue. Unlocking does not cancel the previous request. Cancel if unsure. Unlock anyway?',
 
-  edit: 'Edit message', editHint: 'Edit', copy: 'Copy message', copyHint: 'Copy', copied: 'Copied', copyFailed: 'Could not copy. Select and copy the text manually.',
+  edit: 'Edit message', editHint: 'Edit', editInBranch: 'Edit in a new branch', copy: 'Copy message', copyHint: 'Copy', copied: 'Copied', copyFailed: 'Could not copy. Select and copy the text manually.',
   label: 'Edit this message', cancel: 'Cancel', save: 'Send', saving: 'Sending…',
   attachments: 'Message attachments', addFiles: 'Add files', addHint: 'Attach files', remove: 'Remove', removeHint: 'Remove from this message; the original file is kept',
   fileRead: 'Could not reuse an attachment. Nothing was submitted. Check the branch or reattach the file.', fileUpload: 'Upload failed. Nothing was submitted. Check your connection.',

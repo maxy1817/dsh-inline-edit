@@ -64,10 +64,10 @@ test('published schema range excludes versions outside supported host lines',()=
  }
 });
 
-test('release manifest and lockfile publish the same 0.3.0 host requirements',async()=>{
+test('release manifest and lockfile agree on the 0.3.1 version and host requirements',async()=>{
  const lock=JSON.parse(await readFile(new URL('../package-lock.json',import.meta.url),'utf8'));
  const root=lock.packages[''];
- assert.equal(pkg.version,'0.3.0');
+ assert.equal(pkg.version,'0.3.1');
  assert.equal(lock.version,pkg.version);
  assert.equal(root.version,pkg.version);
  assert.deepEqual(root.engines,pkg.engines);

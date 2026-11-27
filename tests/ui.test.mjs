@@ -40,7 +40,7 @@ const built=await build({
 const sourceModule={exports:{}};
 vm.runInThisContext(`(function(require,module,exports){${built.outputFiles[0].text}\n})`)(id=>id==='@deepseek-ai/dsh-client-ui-primitives'?nativePrimitives:require(id),sourceModule,sourceModule.exports);
 client=sourceModule.exports;
-let root;
+let root,mountCount=0;
 const node={kind:'user',data:{seq:3,time:0,content:[{type:'text',text:'原消息'},{type:'file',attachment:{attachmentId:'abc',name:'old.txt',bytes:3}}]}};
 const editorSelector='textarea,.dsh-ie-reference-editor';
 function editor(){return document.querySelector(editorSelector);}
@@ -84,7 +84,7 @@ async function mount(overrides={}){
  if(root)await act(async()=>root.unmount());
  const calls=[];root=createRoot(document.getElementById('root'));
  await act(async()=>root.render(React.createElement(client.EditableMessage,{
- node,sessionId:'source',useSession:()=>({openState:'open',running:false}),
+ node,sessionId:`source-${++mountCount}`,useSession:()=>({openState:'open',running:false}),
  renderFactorySlot:(_,props)=>React.createElement('p',{},props.content.text),
  coordinator:{save:async args=>{calls.push(args);return {childId:'child'};}},openSession:()=>{},...overrides,
  })));
@@ -187,6 +187,74 @@ test('cancel restores both text and original attachments without a save',async()
  assert.equal(editor(),null);assert.equal(calls.length,0);
  await click('编辑消息');assert.equal(editor().value,'原消息');assert.ok(attachmentToken('old.txt'));assert.equal(button('移除 old.txt'),undefined);assert.equal(button('发送').disabled,false);
 });
+test('unsent drafts follow their conversation and message and only reopen on demand',async()=>{
+ const calls=[];
+ const props={sessionId:'draft-navigation',coordinator:{save:async args=>{calls.push(args);return {childId:'child'};}}};
+ const addedFile=new File(['new contents'],'new.csv',{type:'text/csv'});
+ const secondFile=new File(['more contents'],'second.csv',{type:'text/csv'});
+ async function selectFile(file,offset){
+  await act(async()=>{
+   editor().setSelectionRange(offset,offset);
+   const picker=document.querySelector('input[type=file]');
+   Object.defineProperty(picker,'files',{value:[file],configurable:true});
+   picker.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+ }
+ await mount(props);
+ await click('编辑消息');
+ await type('保留未发送的修改');
+ await removeAttachment('old.txt');
+ await selectFile(addedFile,2);
+ assert.equal(editor().textContent,'保留new.csv未发送的修改');
+
+ const otherMessage={...node,data:{...node.data,seq:7}};
+ for(const other of [{sessionId:'draft-other-conversation'},{node:otherMessage}]){
+  await mount({...props,...other});
+  await click('编辑消息');
+  assert.equal(editor().value,'原消息');
+  assert.ok(attachmentToken('old.txt'));
+  assert.equal(attachmentToken('new.csv'),undefined);
+  await click('取消');
+ }
+
+ await mount(props);
+ assert.equal(editor(),null,'opening the conversation should not open or submit the editor');
+ assert.equal(calls.length,0);
+ await click('编辑消息');
+ assert.equal(editor().value,'保留未发送的修改');
+ assert.equal(editor().textContent,'保留new.csv未发送的修改');
+ assert.equal(attachmentToken('old.txt'),undefined);
+ assert.equal(calls.length,0);
+ await selectFile(secondFile,editor().value.length);
+ assert.deepEqual(attachmentTokens().map(token=>token.textContent),[addedFile.name,secondFile.name]);
+ await click('发送');
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].attachments.length,2);
+ assert.equal(calls[0].attachments[0].file,addedFile);
+ assert.equal(calls[0].attachments[1].file,secondFile);
+
+ await mount(props);
+ await click('编辑消息');
+ assert.equal(editor().value,'原消息');
+ assert.ok(attachmentToken('old.txt'));
+ assert.equal(attachmentToken('new.csv'),undefined);
+});
+test('cancelling a restored draft clears it across conversation switches',async()=>{
+ const props={sessionId:'cancel-restored-draft'};
+ await mount(props);
+ await click('编辑消息');
+ await type('待取消的草稿');
+ await removeAttachment('old.txt');
+ await mount(props);
+ await click('编辑消息');
+ assert.equal(editor().value,'待取消的草稿');
+ assert.equal(attachmentToken('old.txt'),undefined);
+ await click('取消');
+ await mount(props);
+ await click('编辑消息');
+ assert.equal(editor().value,'原消息');
+ assert.ok(attachmentToken('old.txt'));
+});
 test('pointer cancel does not leave focus holding message actions open',async()=>{
  const calls=await mount();await click('编辑消息');
  await act(async()=>{
@@ -264,6 +332,41 @@ test('adding ordinary files to plain text inserts native tokens at the caret and
  assert.equal(editor().value,'前继续后','file insertion leaves a normal caret immediately after the token group, without spaces');
  await click('发送');assert.equal(calls[0].text,'前继续后');assert.equal(calls[0].attachments.length,2);
  assert.equal(calls[0].attachments[0].file,files[0]);assert.equal(calls[0].attachments[1].file,files[1]);
+});
+function renderNativeHistory(_, {content}) {
+ // The native user content slot renders the attachment group before its text.
+ const names=content.attachments.map(part=>part.file?.name ?? part.image?.attachment.name);
+ return React.createElement('p',{'data-test-native-content':''},names,content.text);
+}
+function historyContent(){return [...document.querySelectorAll('[data-test-native-content]')].map(group=>group.textContent).join('');}
+test('history preserves a trailing attachment after its related text',async()=>{
+ await mount({renderFactorySlot:renderNativeHistory});
+ assert.equal(historyContent(),'原消息old.txt');
+});
+for (const mode of ['branch','current']) test(`opening and resending keeps text on both sides of an ordinary file in ${mode} mode`,async()=>{
+ const content=[{type:'text',text:'先读'},node.data.content[1],{type:'text',text:'再总结'}];
+ const calls=await mount({mode,latestSeq:3,node:{...node,data:{...node.data,content}},renderFactorySlot:renderNativeHistory});
+ assert.equal(historyContent(),'先读old.txt再总结');
+ await click('编辑消息');
+ assert.equal(editor().textContent,'先读old.txt再总结');
+ await click('发送');
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].mode,mode);
+ assert.deepEqual(calls[0].parts,[content[0],{type:'attachment',key:calls[0].attachments[0].key},content[2]]);
+});
+test('moving an attachment updates the parts even when the text is unchanged',async()=>{
+ const content=[{type:'text',text:'先读'},node.data.content[1],{type:'text',text:'再总结'}];
+ const calls=await mount({node:{...node,data:{...node.data,content}}});
+ await click('编辑消息');
+ await act(async()=>editor().__lexicalEditor.update(()=>{
+  const root=client.$getRoot();
+  const chip=lexicalNodes(root).find(child=>child.getType()==='dsh-inline-edit-reference');
+  root.getAllTextNodes().at(-1).insertAfter(chip);
+ },{discrete:true}));
+ assert.equal(editor().value,'先读再总结');
+ assert.equal(editor().textContent,'先读再总结old.txt');
+ await click('发送');
+ assert.deepEqual(calls[0].parts,[{type:'text',text:'先读再总结'},{type:'attachment',key:calls[0].attachments[0].key}]);
 });
 for (const mode of ['branch','current']) test(`plain Enter sends edited text and preserves original attachments in ${mode} mode`,async()=>{
  const calls=await mount({mode,latestSeq:3});await click('编辑消息');
@@ -411,11 +514,30 @@ test('failed submission keeps draft and offers branch recovery without retry',as
  assert.equal(editor().value,'keep this');assert.ok(button('打开新分支检查'));assert.equal(button('发送').disabled,true);assert.equal(count,1);
 });
 
-test('current mode edits only the last user message and never navigates to a new session',async()=>{
- await mount({mode:'current',latestSeq:9});await click('编辑消息');assert.equal(editor(),null);
- assert.match(button('编辑消息').getAttribute('aria-description'),/仅支持最近一条主消息/);
- const calls=await mount({mode:'current',latestSeq:3,coordinator:{save:async()=>({sessionId:'source'})},openSession:()=>assert.fail('must not navigate')});
- await click('编辑消息');await type('原地修改');await click('发送');assert.equal(editor(),null);
+test('an older main message can be edited in a new branch without changing the current default',async()=>{
+ const opened=[];
+ const props={sessionId:'older-main-message',mode:'current',openSession:id=>opened.push(id)};
+ const calls=await mount({...props,latestSeq:9});
+ assert.ok(!button('编辑消息'),'the older message offers the branch pencil');
+ await click('在新分支编辑');
+ assert.ok(editor());
+ assert.equal(calls.length,0);
+ assert.deepEqual(opened,[]);
+ await type('修改较早的消息');
+ await click('发送');
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].mode,'branch');
+ assert.deepEqual(opened,['child']);
+
+ const currentCalls=[];
+ await mount({...props,latestSeq:3,coordinator:{save:async args=>{currentCalls.push(args);return {sessionId:props.sessionId};}}});
+ await click('编辑消息');
+ await type('原地修改');
+ await click('发送');
+ assert.equal(editor(),null);
+ assert.equal(currentCalls.length,1);
+ assert.equal(currentCalls[0].mode,'current');
+ assert.deepEqual(opened,['child']);
 });
 test('each confirmed current regeneration uses a fresh request when the message updates in place',async()=>{
  const calls=[];
@@ -445,8 +567,13 @@ test('uncertain current submission is not retried by a second click',async()=>{
 });
 
 test('supplemental messages have no edit control in current mode',async()=>{
- await mount({mode:'current',latestSeq:3,supplemental:true});assert.equal(button('编辑消息'),undefined);assert.ok(button('复制消息'));
- await mount({mode:'current',latestSeq:3,node:{...node,kind:'steering'}});assert.equal(button('编辑消息'),undefined);
+ await mount({mode:'current',latestSeq:9,supplemental:true});
+ assert.equal(button('编辑消息'),undefined);
+ assert.equal(button('在新分支编辑'),undefined);
+ assert.ok(button('复制消息'));
+ await mount({mode:'current',latestSeq:9,node:{...node,kind:'steering'}});
+ assert.equal(button('编辑消息'),undefined);
+ assert.equal(button('在新分支编辑'),undefined);
 });
 test('editing waits for saved settings instead of accidentally using branch fallback',async()=>{
  const calls=await mount({settingsReady:false});await click('编辑消息');
@@ -490,7 +617,8 @@ test('current-mode tooltip follows the draft until it closes, then uses the new 
 
 test('restricted edit clicks add no inline notice and retain the hover explanation',async(t)=>{
  t.mock.timers.enable({apis:['setTimeout']});
- const calls=await mount({mode:'current',latestSeq:9});await click('编辑消息');
+ const calls=await mount({mode:'current',latestSeq:3,useSession:()=>({openState:'open',running:true})});
+ await click('编辑消息');
  assert.equal(document.querySelector('.dsh-ie-notice'),null);
  assert.equal(document.querySelector('.dsh-ie-error'),null);
  await click('编辑消息');
@@ -499,16 +627,16 @@ test('restricted edit clicks add no inline notice and retain the hover explanati
  assert.equal(pencil.hasAttribute('title'),false);
  await act(async()=>pencil.dispatchEvent(new dom.window.MouseEvent('mouseover',{bubbles:true})));
  await act(async()=>t.mock.timers.tick(220));
- assert.equal(document.querySelector('[role=tooltip]').textContent,'仅支持最近一条主消息；更早消息请使用分支模式。');
+ assert.equal(document.querySelector('[role=tooltip]').textContent,'请等待当前回答完成，或先停止生成。');
  assert.equal(editor(),null);assert.equal(calls.length,0);
 });
 
-test('edit restriction notice clears immediately when the setting makes editing available',async()=>{
+test('edit becomes available after settings load without adding an inline restriction notice',async()=>{
  await mount();
- const props={node,sessionId:'notice-mode-change',mode:'current',latestSeq:9,useSession:()=>({openState:'open',running:false}),renderFactorySlot:()=>null,coordinator:{save:async()=>assert.fail('must not submit')},openSession:()=>{}};
- await act(async()=>root.render(React.createElement(client.EditableMessage,props)));
+ const props={node,sessionId:'notice-mode-change',mode:'current',latestSeq:3,useSession:()=>({openState:'open',running:false}),renderFactorySlot:()=>null,coordinator:{save:async()=>assert.fail('must not submit')},openSession:()=>{}};
+ await act(async()=>root.render(React.createElement(client.EditableMessage,{...props,settingsReady:false})));
  await click('编辑消息');assert.equal(document.querySelector('.dsh-ie-notice'),null);
- await act(async()=>root.render(React.createElement(client.EditableMessage,{...props,mode:'branch'})));
+ await act(async()=>root.render(React.createElement(client.EditableMessage,props)));
  assert.equal(document.querySelector('.dsh-ie-notice'),null);
  await click('编辑消息');assert.ok(editor());
 });
@@ -539,7 +667,12 @@ for (const outcome of ['success','rejected','uncertain']) test(`remounted editor
  await act(async()=>{if(outcome==='success')finish({sessionId:props.sessionId});else fail({code:outcome==='uncertain'?'currentUncertain':'fileUpload'});});
  assert.equal(button('编辑消息').getAttribute('aria-disabled'),outcome==='uncertain'?'true':'false');
  assert.equal(!!button('我已检查提交结果'),outcome==='uncertain');assert.equal(calls,1);
- if(outcome!=='uncertain'){assert.doesNotMatch(document.body.textContent,/暂时无法确认提交状态/);await click('编辑消息');assert.ok(editor());}
+ if(outcome!=='uncertain'){
+  assert.doesNotMatch(document.body.textContent,/暂时无法确认提交状态/);
+  await click('编辑消息');
+  assert.equal(editor().value,outcome==='rejected'?'新内容':'原消息');
+  assert.ok(attachmentToken('old.txt'));
+ }
 });
 test('copy and attachment actions use the same native-style tooltip without browser titles',async(t)=>{
  t.mock.timers.enable({apis:['setTimeout']});

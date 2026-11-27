@@ -8,9 +8,9 @@ test('planEdit returns boundary before turn preamble and always disposes observa
  const h=host();assert.deepEqual(await planEdit(h.ctx,{sourceId:'s',seq:3}),{atSeq:0});assert.equal(h.disposed,1);
  await assert.rejects(planEdit(h.ctx,{sourceId:'s',seq:2}));assert.equal(h.disposed,2);
 });
-test('both authenticated routes register with lifetime disposal',()=>{
+test('authenticated routes register with lifetime disposal',()=>{
  const routes=[],disposers=[];apply({inject:()=>{},sessionProjections:{register:()=>()=>{}},on:()=>{},effect:f=>disposers.push(f()),connection:{fetch:{register:r=>{routes.push(r);return ()=>{};}}}});
- assert.deepEqual(routes.map(r=>r.path),['/api/dsh-inline-edit/current','/api/dsh-inline-edit/plan','/api/dsh-inline-edit/reuse-file']);assert.ok(disposers.every(f=>typeof f==='function'));
+ assert.deepEqual(routes.map(r=>r.path),['/api/dsh-inline-edit/current','/api/dsh-inline-edit/plan','/api/dsh-inline-edit/fork-files','/api/dsh-inline-edit/reuse-file']);assert.ok(disposers.every(f=>typeof f==='function'));
 });
 test('native adapter to host plan to coordinator uses planned boundary, not seq minus one',async()=>{
  const h=host(),calls=[],signal=new AbortController().signal;

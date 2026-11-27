@@ -58,17 +58,27 @@ export function $isReferenceChipNode(node) { return node instanceof ReferenceChi
 /** Native clipboard projection: leaf text verbatim, one newline per block gap. */
 export function $referenceLayout() {
   let text='';
-  const bounds=new Map(), children=new Map(),attachmentKeys=[];
+  const bounds=new Map(), children=new Map(),attachmentKeys=[],parts=[];
+  function appendText(value) {
+    if (!value) return;
+    text+=value;
+    const previous=parts.at(-1);
+    if (previous?.type==='text') previous.text+=value;
+    else parts.push({type:'text',text:value});
+  }
   function walk(element) {
     const start=text.length, kids=element.getChildren();
     children.set(element.getKey(),kids.map(kid=>kid.getKey()));
     for (const kid of kids) {
       const from=text.length;
       if ($isReferenceChipNode(kid)) {
-        if (kid.getSource()==='attachment') attachmentKeys.push(kid.getReference());
-        else text+=kid.getTextContent();
-      } else if ($isTextNode(kid)) text+=kid.getTextContent();
-      else if ($isLineBreakNode(kid)) text+='\n';
+        if (kid.getSource()==='attachment') {
+          const key=kid.getReference();
+          attachmentKeys.push(key);
+          parts.push({type:'attachment',key});
+        } else appendText(kid.getTextContent());
+      } else if ($isTextNode(kid)) appendText(kid.getTextContent());
+      else if ($isLineBreakNode(kid)) appendText('\n');
       else if ($isElementNode(kid)) walk(kid);
       bounds.set(kid.getKey(),{start:from,end:text.length});
     }
@@ -77,7 +87,7 @@ export function $referenceLayout() {
   const root=$getRoot(), blocks=root.getChildren();
   children.set(root.getKey(),blocks.map(block=>block.getKey()));
   blocks.forEach((block,index)=>{
-    if (index) text+='\n';
+    if (index) appendText('\n');
     if ($isElementNode(block)) walk(block);
   });
   bounds.set(root.getKey(),{start:0,end:text.length});
@@ -88,5 +98,5 @@ export function $referenceLayout() {
     const child=children.get(point.key)?.[point.offset];
     return child===undefined ? own.end : bounds.get(child)?.start ?? null;
   }
-  return {text,offset,attachmentKeys};
+  return {text,offset,attachmentKeys,parts};
 }

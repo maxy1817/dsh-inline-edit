@@ -5,9 +5,10 @@ import {Session} from '@deepseek-ai/dsh-session';
 import {buildForkSeed} from '@deepseek-ai/dsh-session/fork';
 import {sessionFormatCatalog as codec} from '@deepseek-ai/dsh-session-format-catalog';
 import {createAssistantMessage, createUserMessage} from '@deepseek-ai/dsh-llm';
-import {createEditCoordinator, nativeAdapter, newAttachment, originalAttachments} from '../src/core.js';
+import {createEditCoordinator, MAX_ATTACHMENTS, nativeAdapter, newAttachment, originalAttachments} from '../src/core.js';
 import {editCurrent} from '../src/current.js';
-import {handleReuseRequest, planEdit, reuseOriginalFile} from '../src/index.js';
+import * as host from '../src/index.js';
+const {handleReuseRequest, planEdit, reuseOriginalFile} = host;
 import {collectFileReferences} from '../src/file-references.js';
 
 const text = value => ({type:'text', text:value});
@@ -18,9 +19,12 @@ const ready = () => ({openState:'open', running:false, pendingSubmissions:[]});
 
 // All storage stays in memory, but submission crosses the real authenticated
 // adapter, route handlers, event boundaries and released Session implementation.
-function fixture() {
+function fixture({
+  legacyParent = true, failFileRead = false, refreshesBeforeBranchVisible = 1,
+  targetContent = [text('SUPERSEDED_REQUEST'), firstFile, oldImage, secondFile],
+} = {}) {
   const source = Session.create('reference-source'), sessions = new Map([[source.id, source]]);
-  const calls = {forks:[], prompts:[], uploads:[], reuses:[], imageReads:[], plans:0, observations:0, disposals:0};
+  const calls = {forks:[], prompts:[], uploads:[], reuses:[], imageReads:[], plans:0, observations:0, disposals:0, refreshes:0};
   const receipts = new Map(); let serial = 0;
   function addTurn(session, content, answer, queued) {
     const turn = session.snapshotEvents().filter(event => event.type === 'turn/start').length + 1;
@@ -36,7 +40,7 @@ function fixture() {
     return target;
   }
   addTurn(source, [text('KEEP_HISTORY')], 'KEEP_ANSWER');
-  const target = addTurn(source, [text('SUPERSEDED_REQUEST'), firstFile, oldImage, secondFile], 'SUPERSEDED_ANSWER');
+  const target = addTurn(source, targetContent, 'SUPERSEDED_ANSWER');
   const before = structuredClone(source.snapshotEvents());
   const agent = {id:source.id, session:source, status:'idle', inbox:{nextTurn:[], nextStep:[]}, options:{provider:'offline', model:'offline'},
     runMaintenance:fn => fn(new AbortController().signal),
@@ -47,16 +51,28 @@ function fixture() {
     receipts.set(receiptId, {sessionId, attachment});
     return {receiptId};
   }
+  function fork({sessionId, atSeq}) {
+    calls.forks.push({sessionId, atSeq});
+    const child = Session.create('reference-child', buildForkSeed(source.snapshotEvents(), atSeq), {
+      ...source.header, id:'reference-child', isSeeded:true, ...(legacyParent ? {parentSession:sessionId} : {}),
+    }, atSeq + 1);
+    sessions.set(child.id, child);
+    return {sessionId:child.id};
+  }
   const ctx = {
     agents:{get:id => id === source.id ? agent : sessions.has(id) ? {session:sessions.get(id)} : undefined},
-    sessionController:{resolveAgent:async id => ({agent:id === source.id ? agent : undefined})},
+    sessionController:{resolveAgent:async id => ({agent:id === source.id ? agent : undefined}), fork:async request => fork(request)},
     sessionQuery:{observeSession:async id => {
       calls.observations++;
-      return {events:sessions.get(id).snapshotEvents(), [Symbol.dispose]() {calls.disposals++;}};
+      const session = sessions.get(id);
+      return {header:session.header, events:session.snapshotEvents(), [Symbol.dispose]() {calls.disposals++;}};
     }},
     llm:{resolveModelInfo:async () => ({inputModalities:['text', 'image']})},
     attachments:{
-      readFileStream:async function* () {yield new Uint8Array([1, 2, 3]);},
+      readFileStream:async function* () {
+        if (failFileRead) throw new Error('Attachment is unavailable');
+        yield new Uint8Array([1, 2, 3]);
+      },
       readImage:async attachment => {calls.imageReads.push(attachment.attachmentId); return {attachment, data:new Uint8Array([1, 2, 3])};},
       admitPromptContent:async parts => parts.map(part => ({type:'image', attachment:{attachmentId:'admitted-image-' + ++serial, name:part.name, bytes:Buffer.from(part.data, 'base64').length, mediaType:part.mediaType, width:1, height:1}})),
     },
@@ -72,26 +88,27 @@ function fixture() {
   };
   const adapter = nativeAdapter({
     sessions:{
-      using:async (id, _options, operation) => operation({ready:Promise.resolve({session:{
-        id, getSnapshot:ready,
-        readAttachment:async attachmentId => ({ok:true, value:await ctx.attachments.readImage(source.snapshotEvents()[target.seq].data.content.find(block => block.attachment?.attachmentId === attachmentId).attachment)}),
-        prompt:async content => {
-          calls.prompts.push({sessionId:id, content:structuredClone(content)});
-          const admitted = [];
-          for (const part of content) {
-            if (part.type === 'file') admitted.push({type:'file', attachment:ctx.fileUploads.resolve({id}, part.receiptId)});
-            else if (part.type === 'image') admitted.push(...await ctx.attachments.admitPromptContent([part]));
-            else admitted.push(part);
-          }
-          addTurn(sessions.get(id), admitted, 'REGENERATED_ANSWER');
-          return {ok:true};
-        },
-      }})}),
-      fork:async ({sessionId, atSeq}) => {
-        calls.forks.push({sessionId, atSeq});
-        const child = Session.create('reference-child', buildForkSeed(source.snapshotEvents(), atSeq), {...source.header, id:'reference-child', isSeeded:true, parentSession:sessionId}, atSeq + 1);
-        sessions.set(child.id, child); return child.id;
+      refresh:async () => { calls.refreshes++; },
+      list:{getSnapshot:() => ({byId:calls.refreshes >= refreshesBeforeBranchVisible ? {'reference-child':{id:'reference-child'}} : {}})},
+      using:async (id, _options, operation) => {
+        if (id !== source.id && !legacyParent && calls.refreshes < refreshesBeforeBranchVisible) throw new Error('Unknown branch before refresh');
+        return operation({ready:Promise.resolve({session:{
+          id, getSnapshot:ready,
+          readAttachment:async attachmentId => ({ok:true, value:await ctx.attachments.readImage(source.snapshotEvents()[target.seq].data.content.find(block => block.attachment?.attachmentId === attachmentId).attachment)}),
+          prompt:async content => {
+            calls.prompts.push({sessionId:id, content:structuredClone(content)});
+            const admitted = [];
+            for (const part of content) {
+              if (part.type === 'file') admitted.push({type:'file', attachment:ctx.fileUploads.resolve({id}, part.receiptId)});
+              else if (part.type === 'image') admitted.push(...await ctx.attachments.admitPromptContent([part]));
+              else admitted.push(part);
+            }
+            addTurn(sessions.get(id), admitted, 'REGENERATED_ANSWER');
+            return {ok:true};
+          },
+        }})});
       },
+      fork:async request => fork(request).sessionId,
     },
     fileUpload:{
       upload:async (sessionId, file) => {
@@ -99,7 +116,8 @@ function fixture() {
         return {ok:true, value:receipt(sessionId, {attachmentId:'uploaded-file-' + ++serial, name:file.name, bytes:file.size})};
       },
       post:async input => {
-        const operation = input.path.endsWith('/plan') ? planEdit : input.path.endsWith('/current') ? editCurrent : reuseOriginalFile;
+        const operation = input.path.endsWith('/plan') ? planEdit : input.path.endsWith('/current') ? editCurrent
+          : input.path.endsWith('/fork-files') ? host.forkWithOriginalFiles : reuseOriginalFile;
         if (operation === planEdit) calls.plans++;
         const response = await handleReuseRequest(ctx, new Request('http://localhost/' + input.path, {method:'POST', headers:input.headers, body:input.body, signal:input.signal}), operation);
         return {status:response.status, body:await response.text()};
@@ -111,6 +129,33 @@ function fixture() {
   };
 }
 
+test('rc.5 branch sends changed text with retained ordinary files without parentSession', async () => {
+  const f = fixture({legacyParent:false, refreshesBeforeBranchVisible:2});
+  const retained = originalAttachments(f.node.data).filter(item => item.type === 'file');
+  const result = await createEditCoordinator(f.adapter).save({
+    sessionId:f.source.id, node:f.node, text:'改完的文字', attachments:retained, mode:'branch',
+  });
+  assert.equal(f.sessions.get(result.childId).header.parentSession, undefined);
+  assert.equal(f.calls.forks.length, 1);
+  assert.equal(f.calls.refreshes, 2, 'refresh once more if an older list request completed first');
+  assert.equal(f.calls.prompts.length, 1);
+  assert.deepEqual(f.calls.reuses.map(call => call.sessionId), [result.childId, result.childId]);
+  assert.deepEqual(f.calls.prompts[0].content.map(part => part.type), ['text', 'file', 'file']);
+  assert.deepEqual(f.source.snapshotEvents(), f.before);
+});
+
+test('rc.5 attachment staging failure keeps the created branch recoverable without sending', async () => {
+  const f = fixture({legacyParent:false, failFileRead:true});
+  const retained = originalAttachments(f.node.data).find(item => item.type === 'file');
+  await assert.rejects(createEditCoordinator(f.adapter).save({
+    sessionId:f.source.id, node:f.node, text:'改完的文字', attachments:[retained], mode:'branch',
+  }), {code:'fileRead', childId:'reference-child', stage:'attachments'});
+  assert.ok(f.sessions.has('reference-child'));
+  assert.equal(f.calls.prompts.length, 0);
+  assert.equal(f.calls.observations, f.calls.disposals);
+  assert.deepEqual(f.source.snapshotEvents(), f.before);
+});
+
 function diskRoundtrip(session) {
   const restore = codec.createRestore(JSON.parse(JSON.stringify(codec.encodeCurrentHeader({...session.header, delegationDepth:0}, session.inheritedEventCount))), {recovery:'strict', validation:'current'});
   for (const event of session.snapshotEvents()) restore.decodeRow(JSON.parse(JSON.stringify(codec.encodeCurrentEvent(event))));
@@ -118,7 +163,55 @@ function diskRoundtrip(session) {
   return Session.fromRestore(session.id, restored.events, restored.header, restored.inheritedEventCount, 'detached');
 }
 
+test('current submission accepts the full attachment limit with text between each file', async () => {
+  const csv = {type:'file', attachment:{attachmentId:'retained-csv', name:'A.csv', bytes:3}};
+  const f = fixture({targetContent:[text('original'), csv]});
+  const attachments = originalAttachments(f.node.data);
+  for (let index = 1; index < MAX_ATTACHMENTS; index++) {
+    attachments.push(newAttachment(new File(['a,b'], `added-${index}.csv`), `new:${index}`));
+  }
+  const parts = [text('开始')];
+  const expected = ['开始'];
+  attachments.forEach((item, index) => {
+    const instruction = `\n第 ${index + 1} 步 😀`;
+    parts.push({type:'attachment', key:item.key}, text(instruction));
+    expected.push(item.name, instruction);
+  });
+
+  await createEditCoordinator(f.adapter).save({
+    sessionId:f.source.id, node:f.node, text:parts.filter(part => part.type === 'text').map(part => part.text).join(''),
+    attachments:attachments.toReversed(), parts, mode:'current', requestId:randomUUID(),
+  });
+  assert.equal(f.calls.uploads.length, MAX_ATTACHMENTS - 1);
+  const actual = f.agent.inbox.nextTurn[0].content.map(part => part.type === 'text' ? part.text : part.attachment.name);
+  assert.deepEqual(actual, expected);
+});
+
 for (const mode of ['branch', 'current']) {
+  test(`${mode} unchanged interleaved CSV preserves neighboring text through submission and replay`, async () => {
+    const csv = {type:'file', attachment:{attachmentId:'ordered-csv', name:'A.csv', bytes:3}};
+    const f = fixture({legacyParent:false, targetContent:[text('先读'), csv, text('再总结')]});
+    const attachments = originalAttachments(f.node.data);
+    const parts = [text('先读'), {type:'attachment', key:attachments[0].key}, text('再总结')];
+    const saved = await createEditCoordinator(f.adapter).save({
+      sessionId:f.source.id, node:f.node, text:'先读再总结', attachments, parts, mode, requestId:randomUUID(),
+    });
+    const submitted = mode === 'current' ? f.agent.inbox.nextTurn[0].content : f.calls.prompts[0].content;
+    assert.deepEqual(submitted.map(part => part.type === 'text' ? part.text : part.type), ['先读', 'file', '再总结']);
+
+    let result = f.sessions.get(saved.childId);
+    if (mode === 'current') {
+      const queued = f.agent.inbox.nextTurn.shift();
+      f.addTurn(f.source, queued.content, 'REGENERATED_ANSWER', queued);
+      result = f.source;
+    }
+    const orderedContent = session => session.deriveMessages()
+      .findLast(message => message.content.some(part => part.type === 'text' && part.text === '先读')).content
+      .map(part => part.type === 'text' ? part.text : part.attachment.name);
+    assert.deepEqual(orderedContent(result), ['先读', 'A.csv', '再总结']);
+    assert.deepEqual(orderedContent(diskRoundtrip(result)), ['先读', 'A.csv', '再总结']);
+  });
+
   test(`${mode} submission preserves duplicate file reference spelling and selected attachment identity through host and replay`, async () => {
     const f = fixture();
     const raw = String.raw`@"C:\工作 文件\报告😀.txt"`;

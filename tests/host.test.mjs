@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {reuseOriginalFile,handleReuseRequest,apply,editBoundary} from '../src/index.js';
+import {reuseOriginalFile,forkWithOriginalFiles,handleReuseRequest,apply,editBoundary} from '../src/index.js';
 function fixture() {
  let disposed=0;const calls=[];
  const ref={attachmentId:'hash',name:'old.txt',bytes:3};
@@ -23,6 +23,15 @@ test('wrong cutoff cannot reuse files outside selected message',async()=>{
 });
 test('forged attachment index is refused and observation disposed',async()=>{
  const f=fixture();await assert.rejects(reuseOriginalFile(f.ctx,{...input,index:12},new AbortController().signal));assert.equal(f.disposed,1);assert.equal(f.calls.length,0);
+});
+test('host validates the edit cut and selected files before creating a branch',async()=>{
+ const f=fixture(), signal=new AbortController().signal;
+ f.ctx.sessionController={fork:async()=>assert.fail('invalid request must not fork')};
+ const request={sourceId:'source',seq:3,atSeq:2,indexes:[0]};
+ await assert.rejects(forkWithOriginalFiles(f.ctx,{...request,atSeq:1},signal),{message:'invalid-branch'});
+ await assert.rejects(forkWithOriginalFiles(f.ctx,{...request,indexes:[1]},signal),{message:'invalid-attachment'});
+ assert.deepEqual(f.calls,[]);
+ assert.equal(f.disposed,2);
 });
 test('storage integrity failure produces sanitized route error',async()=>{
  const f=fixture();f.ctx.attachments.readFileStream=async function*(){throw Error('C:/private/key');};

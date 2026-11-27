@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+- Accept the current DSH staged upload receipt when adding an ordinary file during regeneration in the current conversation. Continue accepting the legacy file reference.
+- When keeping ordinary files in an edited branch, use the child returned by the Host's fork of the selected message boundary. Refresh the client session list before opening the branch.
+- Preserve the order of text and attachments in the editor, in both submit modes, and in chat history.
+- Keep unsent edits in window memory, keyed by session and message. Reopen the same message to restore its text and attachments after switching chats.
+- Offer “Edit in a new branch” directly on older main messages when the current conversation mode is selected. Sending creates the branch.
+
 ## 0.3.0 — historical release entry revision (2026-11-07)
 
 - Correct the manifest at the historical v0.3.0 tag together with its same-name release archive, so marketplace catalogs still pinned to the old URL receive consistent compatibility metadata. Keep package version 0.3.0 and production code unchanged.

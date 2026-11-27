@@ -8,7 +8,7 @@ import {createEmptyHistoryState,registerHistory} from '@lexical/history';
 import {ReferenceChipNode,$referenceLayout} from './vendor/dsh-reference-node.jsx';
 
 /** Seed trusted, non-overlapping host parser ranges without rewriting their source. */
-export function $seedReferenceText(value,references) {
+export function $seedReferenceText(value,references=[],placements=[]) {
   const root=$getRoot();root.clear();
   let paragraph=$createParagraphNode();root.append(paragraph);
   function append(text) {
@@ -18,17 +18,28 @@ export function $seedReferenceText(value,references) {
       if (line) paragraph.append($createTextNode(line));
     });
   }
-  let cursor=0;
-  for (const reference of references || []) {
-    const {start,end,path,label}=reference;
-    if (!Number.isInteger(start)||!Number.isInteger(end)||start<cursor||end<=start||end>value.length||typeof path!=='string'||typeof label!=='string') continue;
-    const raw=value.slice(start,end);
-    if (raw.includes('\n')) continue;
-    append(value.slice(cursor,start));
-    paragraph.append(new ReferenceChipNode({source:'reference',ref:raw,label,appearance:'file',clipboardText:raw}));
-    cursor=end;
+  let cursor=0,referenceIndex=0;
+  function appendRange(limit) {
+    while (referenceIndex<references.length) {
+      const {start,end,path,label}=references[referenceIndex];
+      if (Number.isInteger(start) && start>=limit) break;
+      referenceIndex++;
+      if (!Number.isInteger(start)||!Number.isInteger(end)||start<cursor||end<=start||end>limit||typeof path!=='string'||typeof label!=='string') continue;
+      const raw=value.slice(start,end);
+      if (raw.includes('\n')) continue;
+      append(value.slice(cursor,start));
+      paragraph.append(new ReferenceChipNode({source:'reference',ref:raw,label,appearance:'file',clipboardText:raw}));
+      cursor=end;
+    }
+    append(value.slice(cursor,limit));
+    cursor=limit;
   }
-  append(value.slice(cursor));root.selectEnd();
+  for (const {offset,item} of placements) {
+    appendRange(offset);
+    paragraph.append(attachmentChip(item));
+  }
+  appendRange(value.length);
+  root.selectEnd();
 }
 
 // Native ui-conversation 0.2.1-rc.3 DecoratorPortals, MIT (DeepSeek).
@@ -73,11 +84,40 @@ function $selectTextOffset(start,end=start) {
   return selection;
 }
 
+function attachmentChip(item) {
+  return new ReferenceChipNode({source:'attachment',ref:item.key,label:item.name,appearance:'file',clipboardText:''});
+}
+
 function $insertAttachments(items,selection) {
   if(!items.length)return;
   const selected=selection || $getRoot().selectEnd();
-  const nodes=items.map(item=>new ReferenceChipNode({source:'attachment',ref:item.key,label:item.name,appearance:'file',clipboardText:''}));
+  const nodes=items.map(attachmentChip);
   selected.insertNodes(nodes);nodes.at(-1).selectNext(0,0);
+}
+
+function $seedEditor({value,references,attachments=[],initialParts,initialAttachmentOffset}) {
+  const remaining=new Map(attachments.map(item=>[item.key,item]));
+  const placements=[];
+  let offset=0;
+  if (!Number.isInteger(initialAttachmentOffset)) {
+    for (const part of initialParts || []) {
+      if (part.type==='text') offset+=part.text.length;
+      else if (remaining.has(part.key)) {
+        placements.push({offset,item:remaining.get(part.key)});
+        remaining.delete(part.key);
+      }
+    }
+  }
+  $seedReferenceText(value,references,placements);
+  const selection=Number.isInteger(initialAttachmentOffset)?$selectTextOffset(initialAttachmentOffset):$getSelection();
+  $insertAttachments([...remaining.values()],selection);
+}
+
+function sameParts(previous,current) {
+  return previous.length===current.length && previous.every((part,index)=>{
+    const other=current[index];
+    return part.type===other.type && (part.type==='text'?part.text===other.text:part.key===other.key);
+  });
 }
 
 export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwardedRef) {
@@ -85,7 +125,8 @@ export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwarded
   const element=useRef(null),current=useRef(props),emitted=useRef(value),frame=useRef(null);
   // Only parent-supplied trusted File/original attachment objects enter this
   // registry. Keep them for undo/redo until this editor is unmounted.
-  const knownAttachments=useRef(new Map()),incomingKeys=useRef(new Set(attachments.map(item=>item.key))),projectedKeys=useRef([]),lastSelection=useRef(null);
+  const knownAttachments=useRef(new Map()),incomingKeys=useRef(new Set(attachments.map(item=>item.key)));
+  const projectedKeys=useRef([]),projectedParts=useRef([]),lastSelection=useRef(null);
   for(const item of attachments)knownAttachments.current.set(item.key,item);
   current.current=props;
   const [editor]=useState(()=>createEditor({namespace:'dsh-inline-edit',nodes:[ReferenceChipNode],onError:error=>{throw error;}}));
@@ -123,14 +164,16 @@ export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwarded
       if(node.getSource()==='attachment'&&!knownAttachments.current.has(node.getReference()))node.remove();
     });
     editor.update(()=>{
-      $seedReferenceText(current.current.value,current.current.references);
-      const offset=current.current.initialAttachmentOffset;
-      $insertAttachments(current.current.attachments || [],Number.isInteger(offset)?$selectTextOffset(offset):$getSelection());
-      $rememberSelection();projectedKeys.current=$referenceLayout().attachmentKeys;
+      $seedEditor(current.current);
+      $rememberSelection();
     },{
       discrete:true,tag:[HISTORY_MERGE_TAG,SKIP_SCROLL_INTO_VIEW_TAG,SKIP_SELECTION_FOCUS_TAG],
     });
     let validState=editor.getEditorState();
+    const initialLayout=validState.read($referenceLayout);
+    projectedKeys.current=initialLayout.attachmentKeys;
+    projectedParts.current=initialLayout.parts;
+    current.current.onAttachmentLayout?.(initialLayout.attachmentKeys,initialLayout.parts);
     history.current.current={editor,editorState:validState};
     const undo=registerHistory(editor,history.current,1000);
     let validHistory={...history.current,undoStack:[...history.current.undoStack],redoStack:[...history.current.redoStack]};
@@ -146,7 +189,7 @@ export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwarded
       });
     }
     const changed=editor.registerUpdateListener(({editorState})=>{
-      const {text,attachmentKeys}=editorState.read(()=>{$rememberSelection();return $referenceLayout();});
+      const {text,attachmentKeys,parts}=editorState.read(()=>{$rememberSelection();return $referenceLayout();});
       const version=++revision;
       if (!restoring && text.length>current.current.maxLength) {
         // Covers non-cancelable IME/input updates as well as programmatic edits.
@@ -167,7 +210,11 @@ export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwarded
       queueMicrotask(()=>{
         if (active&&version===revision) validHistory={...history.current,undoStack:[...history.current.undoStack],redoStack:[...history.current.redoStack]};
       });
-      if (text!==emitted.current) { emitted.current=text;current.current.onChange(text); }
+      if (!sameParts(projectedParts.current,parts)) {
+        projectedParts.current=parts;
+        current.current.onAttachmentLayout?.(attachmentKeys,parts);
+      }
+      if (text!==emitted.current) { emitted.current=text;current.current.onChange?.(text); }
       revealCaret();
     });
     // Keep focus in the editor without moving the surrounding conversation.
@@ -187,7 +234,7 @@ export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwarded
   useLayoutEffect(()=>{
     if (value===emitted.current) return;
     emitted.current=value;
-    editor.update(()=>{$seedReferenceText(value,references);$insertAttachments(current.current.attachments || [],$getSelection());$rememberSelection();},{discrete:true,tag:[HISTORY_MERGE_TAG,SKIP_SCROLL_INTO_VIEW_TAG,SKIP_SELECTION_FOCUS_TAG]});
+    editor.update(()=>{$seedEditor(current.current);$rememberSelection();},{discrete:true,tag:[HISTORY_MERGE_TAG,SKIP_SCROLL_INTO_VIEW_TAG,SKIP_SELECTION_FOCUS_TAG]});
     history.current.undoStack=[];history.current.redoStack=[];
     history.current.current={editor,editorState:editor.getEditorState()};
   },[editor,value,references]);
