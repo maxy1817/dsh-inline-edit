@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Reuse original images when editing in a new branch on DSH 0.2.2, preserving their position among text and files.
+- Keep attachments with the selected text when cutting and pasting within the same open editor.
+- Make the first attachment insertion in a text-only draft undoable and restore it at the original position on redo.
+
 ## 0.3.1
 
 - Accept the current DSH staged upload receipt when adding an ordinary file during regeneration in the current conversation. Continue accepting the legacy file reference.

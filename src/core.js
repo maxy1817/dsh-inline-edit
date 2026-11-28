@@ -91,7 +91,7 @@ async function prepareContent(items, source, api, check) {
   for (const item of items) {
     check();
     if (item.type !== 'image') { prepared.push(item); continue; }
-    const image = item.origin === 'original' ? await api.readImage(source,item.ref.attachmentId) : {
+    const image = item.origin === 'original' ? await api.readImage(source,item.ref) : {
       attachment:{ mediaType:item.mediaType,name:item.name }, data:new Uint8Array(await item.file.arrayBuffer()),
     };
     check();
@@ -208,7 +208,16 @@ export function nativeAdapter(ctx) {
       // An in-flight list refresh may have started before the Host fork.
       if (!ctx.sessions.list.getSnapshot().byId[childId]) await ctx.sessions.refresh();
     },
-    async readImage(session,id) { const result=await session.readAttachment(id); if (!result.ok) throw new EditError('imageRead'); return result.value; },
+    async readImage(session,attachment) {
+      let result = await session.readAttachment(attachment);
+      // DSH 0.2.1 only accepts an ID. Both reads use the source session's
+      // authorization and the same attachment from the original message.
+      if (!result.ok && ['gateway/input-invalid','gateway/arguments-invalid'].includes(result.error?.code)) {
+        result = await session.readAttachment(attachment.attachmentId);
+      }
+      if (!result.ok) throw new EditError('imageRead');
+      return result.value;
+    },
     async uploadFile(childId,file,signal) {
       const result=await ctx.fileUpload.upload(childId,file,file.name || undefined,signal);
       if (!result.ok || !result.value?.receiptId) throw new EditError('fileUpload'); return result.value;

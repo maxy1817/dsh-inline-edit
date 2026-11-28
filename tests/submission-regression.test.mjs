@@ -21,10 +21,11 @@ const ready = () => ({openState:'open', running:false, pendingSubmissions:[]});
 // adapter, route handlers, event boundaries and released Session implementation.
 function fixture({
   legacyParent = true, failFileRead = false, refreshesBeforeBranchVisible = 1,
+  legacyImageInput = legacyParent,
   targetContent = [text('SUPERSEDED_REQUEST'), firstFile, oldImage, secondFile],
 } = {}) {
   const source = Session.create('reference-source'), sessions = new Map([[source.id, source]]);
-  const calls = {forks:[], prompts:[], uploads:[], reuses:[], imageReads:[], plans:0, observations:0, disposals:0, refreshes:0};
+  const calls = {forks:[], prompts:[], uploads:[], reuses:[], imageReads:[], imageInputs:[], plans:0, observations:0, disposals:0, refreshes:0};
   const receipts = new Map(); let serial = 0;
   function addTurn(session, content, answer, queued) {
     const turn = session.snapshotEvents().filter(event => event.type === 'turn/start').length + 1;
@@ -94,7 +95,13 @@ function fixture({
         if (id !== source.id && !legacyParent && calls.refreshes < refreshesBeforeBranchVisible) throw new Error('Unknown branch before refresh');
         return operation({ready:Promise.resolve({session:{
           id, getSnapshot:ready,
-          readAttachment:async attachmentId => ({ok:true, value:await ctx.attachments.readImage(source.snapshotEvents()[target.seq].data.content.find(block => block.attachment?.attachmentId === attachmentId).attachment)}),
+          readAttachment:async input => {
+            calls.imageInputs.push(input);
+            const ref = target.data.content.find(block => block.type === 'image' && block.attachment.attachmentId === (legacyImageInput ? input : input?.attachmentId))?.attachment;
+            if (!ref) return {ok:false, error:{code:'gateway/input-invalid'}};
+            if (!legacyImageInput) assert.deepEqual(input, ref);
+            return {ok:true, value:await ctx.attachments.readImage(ref)};
+          },
           prompt:async content => {
             calls.prompts.push({sessionId:id, content:structuredClone(content)});
             const admitted = [];
@@ -155,6 +162,31 @@ test('rc.5 attachment staging failure keeps the created branch recoverable witho
   assert.equal(f.calls.observations, f.calls.disposals);
   assert.deepEqual(f.source.snapshotEvents(), f.before);
 });
+
+for (const legacy of [false, true]) {
+  test(`branch preserves a retained image between text and CSV on ${legacy ? 'legacy' : 'rc.5'} DSH`, async () => {
+    const csv = {type:'file', attachment:{attachmentId:'ordered-csv', name:'A.csv', bytes:3}};
+    const f = fixture({legacyParent:legacy, targetContent:[text('先看'), oldImage, text('再读'), csv, text('最后总结')]});
+    const attachments = originalAttachments(f.node.data);
+    const parts = [text('先看'), {type:'attachment', key:attachments[0].key}, text('再读'),
+      {type:'attachment', key:attachments[1].key}, text('最后总结')];
+    const saved = await createEditCoordinator(f.adapter).save({
+      sessionId:f.source.id, node:f.node, text:'先看再读最后总结', attachments:attachments.toReversed(), parts, mode:'branch',
+    });
+    assert.equal(f.calls.forks.length, 1);
+    assert.equal(f.calls.prompts.length, 1);
+    assert.deepEqual(f.calls.imageReads, [oldImage.attachment.attachmentId]);
+    assert.deepEqual(f.calls.imageInputs, legacy ? [oldImage.attachment, oldImage.attachment.attachmentId] : [oldImage.attachment]);
+    assert.deepEqual(f.calls.prompts[0].content.map(part => part.type === 'text' ? part.text : part.type),
+      ['先看', 'image', '再读', 'file', '最后总结']);
+    assert.equal(f.calls.prompts[0].content[1].data, 'AQID');
+    const restored = diskRoundtrip(f.sessions.get(saved.childId));
+    const message = restored.deriveMessages().findLast(item => item.content.some(part => part.type === 'text' && part.text === '先看'));
+    assert.deepEqual(message.content.map(part => part.type === 'text' ? part.text : part.attachment.name),
+      ['先看', oldImage.attachment.name, '再读', csv.attachment.name, '最后总结']);
+    assert.deepEqual(f.source.snapshotEvents(), f.before);
+  });
+}
 
 function diskRoundtrip(session) {
   const restore = codec.createRestore(JSON.parse(JSON.stringify(codec.encodeCurrentHeader({...session.header, delegationDepth:0}, session.inheritedEventCount))), {recovery:'strict', validation:'current'});

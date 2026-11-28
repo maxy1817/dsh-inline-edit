@@ -59,6 +59,9 @@ export function $isReferenceChipNode(node) { return node instanceof ReferenceChi
 export function $referenceLayout() {
   let text='';
   const bounds=new Map(), children=new Map(),attachmentKeys=[],parts=[];
+  function boundary() {
+    return {text:text.length,attachments:attachmentKeys.length};
+  }
   function appendText(value) {
     if (!value) return;
     text+=value;
@@ -67,10 +70,10 @@ export function $referenceLayout() {
     else parts.push({type:'text',text:value});
   }
   function walk(element) {
-    const start=text.length, kids=element.getChildren();
+    const start=boundary(), kids=element.getChildren();
     children.set(element.getKey(),kids.map(kid=>kid.getKey()));
     for (const kid of kids) {
-      const from=text.length;
+      const from=boundary();
       if ($isReferenceChipNode(kid)) {
         if (kid.getSource()==='attachment') {
           const key=kid.getReference();
@@ -80,9 +83,9 @@ export function $referenceLayout() {
       } else if ($isTextNode(kid)) appendText(kid.getTextContent());
       else if ($isLineBreakNode(kid)) appendText('\n');
       else if ($isElementNode(kid)) walk(kid);
-      bounds.set(kid.getKey(),{start:from,end:text.length});
+      bounds.set(kid.getKey(),{start:from,end:boundary()});
     }
-    bounds.set(element.getKey(),{start,end:text.length});
+    bounds.set(element.getKey(),{start,end:boundary()});
   }
   const root=$getRoot(), blocks=root.getChildren();
   children.set(root.getKey(),blocks.map(block=>block.getKey()));
@@ -90,13 +93,23 @@ export function $referenceLayout() {
     if (index) appendText('\n');
     if ($isElementNode(block)) walk(block);
   });
-  bounds.set(root.getKey(),{start:0,end:text.length});
-  function offset(point) {
+  bounds.set(root.getKey(),{start:{text:0,attachments:0},end:boundary()});
+  function locate(point) {
     const own=bounds.get(point.key);
     if (!own) return null;
-    if (point.type==='text') return Math.min(own.end,own.start+point.offset);
+    if (point.type==='text') return {
+      text:Math.min(own.end.text,own.start.text+point.offset),
+      attachments:own.start.attachments,
+    };
     const child=children.get(point.key)?.[point.offset];
     return child===undefined ? own.end : bounds.get(child)?.start ?? null;
   }
-  return {text,offset,attachmentKeys,parts};
+  function offset(point) { return locate(point)?.text ?? null; }
+  // Attachment chips have zero text length but still occupy a position in a
+  // selection. Count them here so adjacent chips and chip-only ranges work.
+  function position(point) {
+    const at=locate(point);
+    return at===null ? null : at.text+at.attachments;
+  }
+  return {text,offset,position,attachmentKeys,parts};
 }

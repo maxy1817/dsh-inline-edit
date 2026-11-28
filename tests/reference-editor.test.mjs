@@ -75,6 +75,11 @@ async function dispatch(type,data={},target=area()){
   for(const [name,value] of Object.entries(data))Object.defineProperty(event,name,{value,configurable:true});
   await act(async()=>target.dispatchEvent(event));return event;
 }
+function createClipboard(){
+  const formats=new Map();
+  return {files:[],get types(){return [...formats.keys()];},
+    setData:(type,text)=>formats.set(type,text),getData:type=>formats.get(type) ?? ''};
+}
 async function key(options){const event=new KeyboardEvent('keydown',{bubbles:true,cancelable:true,...options});await act(async()=>area().dispatchEvent(event));return event;}
 async function mountMessage(overrides={}){
   await unmount();const calls=[],opened=[];
@@ -130,9 +135,9 @@ test('a parent rejecting restored attachments rolls back undo without a token mi
 
 test('selecting and cutting an attachment-only token removes it and undo restores the original File',async()=>{
   const attachment={key:'only',name:'only.txt',file:new File(['keep me'],'only.txt')},updates=[];await mountEditor('',{attachments:[attachment],onAttachmentsChange:items=>updates.push(items)});
-  await edit(()=>api.$getRoot().getFirstChild().select(0,1));const writes=[];
-  const event=await dispatch('cut',{clipboardData:{setData:(type,text)=>writes.push([type,text])}});
-  assert.equal(event.defaultPrevented,true);assert.deepEqual(writes,[['text/plain','']]);assert.deepEqual(updates.at(-1),[]);assert.equal(projection(),'');
+  await edit(()=>api.$getRoot().getFirstChild().select(0,1));const clipboardData=createClipboard();
+  const event=await dispatch('cut',{clipboardData});
+  assert.equal(event.defaultPrevented,true);assert.ok(clipboardData.types.includes('text/plain'));assert.equal(clipboardData.getData('text/plain'),'');assert.deepEqual(updates.at(-1),[]);assert.equal(projection(),'');
   await command(api.UNDO_COMMAND);assert.equal(updates.at(-1)?.[0].file,attachment.file);assert.equal(document.querySelectorAll('[data-dsh-ie-reference="attachment"]').length,1);
 });
 
@@ -210,6 +215,102 @@ test('plain-text paste replaces a selected reference atomically and preserves pa
   const {changes}=await mountEditor(`左${rawA}右`);await edit(()=>api.$getRoot().getFirstChild().select(1,2));
   const event=await dispatch('paste',{clipboardData:{files:[],getData:type=>type==='text/plain'?'粘贴\n第二行  ':''}});
   assert.equal(event.defaultPrevented,true);assert.equal(projection(),'左粘贴\n第二行  右');assert.equal(changes.at(-1),'左粘贴\n第二行  右');assert.equal(document.querySelectorAll('[data-dsh-ie-reference]').length,0);
+});
+
+test('cutting and pasting a mixed selection in the same editor moves text and the original attachment together',async()=>{
+  const content=[{type:'text',text:'头选'},{type:'file',attachment:retained},{type:'text',text:'中尾'}];
+  const {calls}=await mountMessage({node:{kind:'user',data:{seq:3,time:0,content}}});
+  await click('编辑消息');
+  await edit(()=>{
+    const [left,right]=api.$getRoot().getAllTextNodes();
+    const selection=left.select(1,1);
+    selection.focus.set(right.getKey(),1,'text');
+  });
+  const clipboardData=createClipboard();
+  assert.equal((await dispatch('cut',{clipboardData})).defaultPrevented,true);
+  assert.equal(clipboardData.getData('text/plain'),'选中');
+  assert.equal(area().textContent,'头尾');
+  await atText('头尾',2);
+  assert.equal((await dispatch('paste',{clipboardData})).defaultPrevented,true);
+  assert.equal(area().textContent,`头尾选${retained.name}中`);
+  await click('发送');
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].attachments.length,1);
+  const [attachment]=calls[0].attachments;
+  assert.equal(attachment.ref,retained);
+  assert.deepEqual(calls[0].parts,[{type:'text',text:'头尾选'},{type:'attachment',key:attachment.key},{type:'text',text:'中'}]);
+});
+
+test('moving a multiline selection preserves its line breaks and adjacent attachments',async()=>{
+  const second={attachmentId:'next-file',name:'second.txt',bytes:6};
+  const content=[{type:'text',text:'甲选\n'},{type:'file',attachment:retained},
+    {type:'file',attachment:second},{type:'text',text:'中\n乙尾'}];
+  const {calls}=await mountMessage({node:{kind:'user',data:{seq:3,time:0,content}}});
+  await click('编辑消息');
+  await edit(()=>{
+    const textNodes=api.$getRoot().getAllTextNodes();
+    const selection=textNodes.at(-1).select(1,1);
+    selection.focus.set(textNodes[0].getKey(),1,'text');
+  });
+  const clipboardData=createClipboard();
+  await dispatch('cut',{clipboardData});
+  assert.equal(clipboardData.getData('text/plain'),'选\n中\n乙');
+  assert.equal(area().textContent,'甲尾');
+  await atText('甲尾',2);
+  await dispatch('paste',{clipboardData});
+  assert.equal(projection(),'甲尾选\n中\n乙');
+  assert.equal(area().textContent,`甲尾选${retained.name}${second.name}中乙`);
+
+  await click('发送');
+  assert.equal(calls.length,1);
+  const [firstFile,secondFile]=calls[0].attachments;
+  assert.equal(calls[0].attachments.length,2);
+  assert.equal(firstFile.ref,retained);
+  assert.equal(secondFile.ref,second);
+  assert.deepEqual(calls[0].parts,[{type:'text',text:'甲尾选\n'},{type:'attachment',key:firstFile.key},
+    {type:'attachment',key:secondFile.key},{type:'text',text:'中\n乙'}]);
+});
+
+test('clipboard data from another reference editor pastes its selected text',async()=>{
+  const content=[{type:'text',text:'左'},{type:'file',attachment:retained},{type:'text',text:'右'}];
+  await mountMessage({node:{kind:'user',data:{seq:3,time:0,content}}});
+  await click('编辑消息');
+  await edit(()=>api.$getRoot().select(0,api.$getRoot().getChildrenSize()));
+  const clipboardData=createClipboard();
+  await dispatch('cut',{clipboardData});
+  assert.equal(clipboardData.getData('text/plain'),'左右');
+
+  // The same content index represents a different attachment in this editor.
+  const other={attachmentId:'other',name:'other.txt',bytes:6};
+  await mountMessage({node:{kind:'user',data:{seq:3,time:0,content:[{type:'text',text:rawA},{type:'file',attachment:other}]}}});
+  await click('编辑消息');
+  await edit(()=>api.$getRoot().selectEnd());
+  await dispatch('paste',{clipboardData});
+  assert.equal(projection(),rawA+'左右');
+  assert.deepEqual([...area().querySelectorAll('[data-dsh-ie-reference="attachment"]')].map(token=>token.textContent),[other.name]);
+});
+
+test('undo and redo the first attachment added at a textarea caret before sending',async()=>{
+  const {calls}=await mountMessage({node:{kind:'user',data:{seq:3,time:0,content:[{type:'text',text:'前后'}]}}});
+  await click('编辑消息');
+  const textarea=document.querySelector('textarea');
+  assert.ok(textarea);
+  textarea.setSelectionRange(1,1);
+  const file=new File(['first attachment'],'at-caret.txt',{type:'text/plain'});
+  const picker=document.querySelector('input[type=file]');
+  Object.defineProperty(picker,'files',{value:[file],configurable:true});
+  await dispatch('change',{},picker);
+  assert.equal(area().textContent,`前${file.name}后`);
+  await command(api.UNDO_COMMAND);
+  assert.equal(area().textContent,'前后');
+  await command(api.REDO_COMMAND);
+  assert.equal(area().textContent,`前${file.name}后`);
+  await click('发送');
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].attachments.length,1);
+  const [attachment]=calls[0].attachments;
+  assert.equal(attachment.file,file);
+  assert.deepEqual(calls[0].parts,[{type:'text',text:'前'},{type:'attachment',key:attachment.key},{type:'text',text:'后'}]);
 });
 
 for(const route of ['picker','paste','drop'])test(`reference editor accepts ordinary files once through ${route} without rewriting body references`,async()=>{

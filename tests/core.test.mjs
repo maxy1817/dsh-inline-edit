@@ -13,7 +13,7 @@ function fixture(content=[text]) {
  const api={
   using:async(id,fn)=>fn({id,getSnapshot:ready}),
   fork:async(id,seq)=>{calls.push(['fork',id,seq]); seeded=buildForkSeed(events,seq);return 'child';},
-  readImage:async(s,id)=>{calls.push(['image',id]);return {attachment:image.attachment,data:new Uint8Array([1,2,3])};},
+  readImage:async(s,attachment)=>{calls.push(['image',attachment.attachmentId]);return {attachment,data:new Uint8Array([1,2,3])};},
   uploadFile:async(id,f)=>{calls.push(['upload',id,f.name]);return {receiptId:'new-receipt'};},
   reuseFile:async r=>{calls.push(['reuse',r]);return {receiptId:'old-receipt'};},
   prompt:async(s,c)=>{calls.push(['prompt',s.id,c]);},
@@ -103,6 +103,15 @@ test('double send makes at most one fork/prompt',async()=>{
 test('image read failure does not create branch',async()=>{
  const f=fixture([text,image]);f.api.readImage=async()=>{throw Error('secret/path');};
  await assert.rejects(f.save(),e=>e.code==='failed'&&!e.message.includes('secret'));assert.equal(f.calls.length,0);
+});
+test('native adapter does not retry a denied image read with a different argument shape',async()=>{
+ const calls=[];
+ const session={readAttachment:async attachment=>{
+  calls.push(attachment);
+  return {ok:false,error:{code:'remote-access/denied'}};
+ }};
+ await assert.rejects(nativeAdapter({}).readImage(session,image.attachment),{code:'imageRead'});
+ assert.deepEqual(calls,[image.attachment]);
 });
 test('file upload failure retains child recovery identity without sending prompt',async()=>{
  const f=fixture();f.api.uploadFile=async()=>{throw Error('transport');};

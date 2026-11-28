@@ -1,11 +1,13 @@
 import React, {forwardRef,useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
-import {createEditor,$getRoot,$getSelection,$isRangeSelection,$createParagraphNode,$createTextNode,$setSelection,$getNodeByKey,$nodesOfType,
+import {createEditor,$getRoot,$getSelection,$isRangeSelection,$createParagraphNode,$createTextNode,$createLineBreakNode,$setSelection,$getNodeByKey,$nodesOfType,
   $addUpdateTag,RootNode,HISTORY_MERGE_TAG,HISTORY_PUSH_TAG,HISTORIC_TAG,PASTE_TAG,
   SKIP_SCROLL_INTO_VIEW_TAG,SKIP_SELECTION_FOCUS_TAG} from 'lexical';
 import {registerPlainText} from '@lexical/plain-text';
 import {createEmptyHistoryState,registerHistory} from '@lexical/history';
 import {ReferenceChipNode,$referenceLayout} from './vendor/dsh-reference-node.jsx';
+
+const CUT_FRAGMENT_FORMAT='application/x-dsh-inline-edit-cut';
 
 /** Seed trusted, non-overlapping host parser ranges without rewriting their source. */
 export function $seedReferenceText(value,references=[],placements=[]) {
@@ -55,11 +57,30 @@ function DecoratorPortals({editor}) {
   })}</>;
 }
 
-function selectionText() {
+function $selectedContent(layout) {
   const selection=$getSelection();
   if (!$isRangeSelection(selection)) return null;
-  const layout=$referenceLayout(),a=layout.offset(selection.anchor),b=layout.offset(selection.focus);
-  return a===null||b===null ? null : {text:layout.text.slice(Math.min(a,b),Math.max(a,b)),selection};
+  const a=layout.position(selection.anchor),b=layout.position(selection.focus);
+  if (a===null||b===null) return null;
+  const start=Math.min(a,b),end=Math.max(a,b);
+  const parts=[],keys=new Set();
+  let at=0,text='';
+  for (const part of layout.parts) {
+    if (at>=end) break;
+    const next=at+(part.type==='text'?part.text.length:1);
+    if (next>start) {
+      if (part.type==='attachment') {
+        parts.push(part);
+        keys.add(part.key);
+      } else {
+        const slice=part.text.slice(Math.max(0,start-at),end-at);
+        if (slice) parts.push({type:'text',text:slice});
+        text+=slice;
+      }
+    }
+    at=next;
+  }
+  return {text,parts,keys,selection};
 }
 
 function $selectTextOffset(start,end=start) {
@@ -95,22 +116,19 @@ function $insertAttachments(items,selection) {
   selected.insertNodes(nodes);nodes.at(-1).selectNext(0,0);
 }
 
-function $seedEditor({value,references,attachments=[],initialParts,initialAttachmentOffset}) {
+function $seedEditor({value,references,attachments=[],initialParts}) {
   const remaining=new Map(attachments.map(item=>[item.key,item]));
   const placements=[];
   let offset=0;
-  if (!Number.isInteger(initialAttachmentOffset)) {
-    for (const part of initialParts || []) {
-      if (part.type==='text') offset+=part.text.length;
-      else if (remaining.has(part.key)) {
-        placements.push({offset,item:remaining.get(part.key)});
-        remaining.delete(part.key);
-      }
+  for (const part of initialParts || []) {
+    if (part.type==='text') offset+=part.text.length;
+    else if (remaining.has(part.key)) {
+      placements.push({offset,item:remaining.get(part.key)});
+      remaining.delete(part.key);
     }
   }
   $seedReferenceText(value,references,placements);
-  const selection=Number.isInteger(initialAttachmentOffset)?$selectTextOffset(initialAttachmentOffset):$getSelection();
-  $insertAttachments([...remaining.values()],selection);
+  $insertAttachments([...remaining.values()],$getSelection());
 }
 
 function sameParts(previous,current) {
@@ -123,6 +141,7 @@ function sameParts(previous,current) {
 export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwardedRef) {
   const {value,references,attachments=[],disabled,label,maxLength,onChange,onKeyDown,onFiles,onLimit}=props;
   const element=useRef(null),current=useRef(props),emitted=useRef(value),frame=useRef(null);
+  const cutFragment=useRef(null);
   // Only parent-supplied trusted File/original attachment objects enter this
   // registry. Keep them for undo/redo until this editor is unmounted.
   const knownAttachments=useRef(new Map()),incomingKeys=useRef(new Set(attachments.map(item=>item.key)));
@@ -163,8 +182,13 @@ export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwarded
     const trustedAttachments=editor.registerNodeTransform(ReferenceChipNode,node=>{
       if(node.getSource()==='attachment'&&!knownAttachments.current.has(node.getReference()))node.remove();
     });
+    const initial=current.current;
+    const firstInsertion=Number.isInteger(initial.initialAttachmentOffset) && initial.attachments?.length;
     editor.update(()=>{
-      $seedEditor(current.current);
+      if (firstInsertion) {
+        $seedReferenceText(initial.value,initial.references);
+        $selectTextOffset(initial.initialAttachmentOffset);
+      } else $seedEditor(initial);
       $rememberSelection();
     },{
       discrete:true,tag:[HISTORY_MERGE_TAG,SKIP_SCROLL_INTO_VIEW_TAG,SKIP_SELECTION_FOCUS_TAG],
@@ -173,7 +197,7 @@ export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwarded
     const initialLayout=validState.read($referenceLayout);
     projectedKeys.current=initialLayout.attachmentKeys;
     projectedParts.current=initialLayout.parts;
-    current.current.onAttachmentLayout?.(initialLayout.attachmentKeys,initialLayout.parts);
+    if (!firstInsertion) initial.onAttachmentLayout?.(initialLayout.attachmentKeys,initialLayout.parts);
     history.current.current={editor,editorState:validState};
     const undo=registerHistory(editor,history.current,1000);
     let validHistory={...history.current,undoStack:[...history.current.undoStack],redoStack:[...history.current.redoStack]};
@@ -223,7 +247,10 @@ export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwarded
     // Restoring the seeded range after focus also keeps a token at the end
     // immediately followed by an editable caret, without adding whitespace.
     element.current?.focus({preventScroll:true});
-    editor.update(()=>$restoredSelection(),{discrete:true,tag:SKIP_SCROLL_INTO_VIEW_TAG});
+    editor.update(()=>{
+      const selection=$restoredSelection();
+      if (firstInsertion) $insertAttachments(initial.attachments,selection);
+    },{discrete:true,tag:firstInsertion?[HISTORY_PUSH_TAG,SKIP_SCROLL_INTO_VIEW_TAG]:SKIP_SCROLL_INTO_VIEW_TAG});
     return ()=>{
       active=false;changed();undo();trustedAttachments();noAncestorScroll();plain();
       if (frame.current!==null) cancelAnimationFrame(frame.current);
@@ -252,11 +279,20 @@ export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwarded
   },[editor,attachments]);
 
   function copy(event,cut=false) {
-    const selected=editor.getEditorState().read(selectionText);
+    const selected=editor.getEditorState().read(()=>$selectedContent($referenceLayout()));
     if (!selected||selected.selection.isCollapsed()||!event.clipboardData) return;
     event.preventDefault();event.stopPropagation();
     event.clipboardData.setData('text/plain',selected.text);
-    if (cut&&!disabled) editor.update(()=>{
+    if (!cut || disabled) return;
+    if (selected.keys.size) {
+      // The system clipboard receives only an opaque marker. The editor
+      // keeps the actual parts and resolves their keys against trusted items.
+      const token=crypto.randomUUID();
+      try { event.clipboardData.setData(CUT_FRAGMENT_FORMAT,token); }
+      catch { return; }
+      cutFragment.current={token,text:selected.text,parts:selected.parts,keys:selected.keys};
+    }
+    editor.update(()=>{
       const selection=$getSelection();if ($isRangeSelection(selection)) selection.removeText();
     },{discrete:true,tag:HISTORY_PUSH_TAG});
   }
@@ -264,16 +300,29 @@ export const ReferenceEditor=forwardRef(function ReferenceEditor(props,forwarded
     event.preventDefault();event.stopPropagation();
     if (disabled) return;
     if (event.clipboardData.files.length) {onFiles(event.clipboardData.files);return;}
-    const text=event.clipboardData.getData('text/plain');
-    if (!text) return;
-    const length=editor.getEditorState().read(()=>{
-      const selected=selectionText();return $referenceLayout().text.length-(selected?.text.length||0)+text.length;
+    const plainText=event.clipboardData.getData('text/plain');
+    const stored=cutFragment.current;
+    const candidate=stored && event.clipboardData.getData(CUT_FRAGMENT_FORMAT)===stored.token ? stored : null;
+    const {length,fragment,text}=editor.getEditorState().read(()=>{
+      const layout=$referenceLayout(), selected=$selectedContent(layout);
+      const occupied=candidate ? new Set(layout.attachmentKeys.filter(key=>!selected?.keys.has(key))) : null;
+      const fragment=candidate && [...candidate.keys].every(key=>knownAttachments.current.has(key)&&!occupied.has(key)) ? candidate : null;
+      // The OS may normalize line endings in the plain-text representation.
+      const text=fragment?.text ?? plainText;
+      return {length:layout.text.length-(selected?.text.length||0)+text.length,fragment,text};
     });
+    if (!text && !fragment) return;
     if (length>maxLength) {onLimit?.();return;}
     editor.update(()=>{
       const selection=$getSelection();
-      if ($isRangeSelection(selection)) selection.insertText(text);
-      else $getRoot().selectEnd().insertText(text);
+      const target=$isRangeSelection(selection)?selection:$getRoot().selectEnd();
+      if (!fragment) target.insertText(text);
+      else {
+        const nodes=fragment.parts.flatMap(part=>part.type==='attachment'
+          ? [attachmentChip(knownAttachments.current.get(part.key))]
+          : part.text.split(/(\n)/).filter(Boolean).map(chunk=>chunk==='\n'?$createLineBreakNode():$createTextNode(chunk)));
+        target.insertNodes(nodes);
+      }
     },{discrete:true,tag:PASTE_TAG});
   }
   return <>
